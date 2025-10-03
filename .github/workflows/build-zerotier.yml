@@ -6,11 +6,11 @@ on:
       zerotier_version:
         description: "ZeroTier version (e.g. 1.14.0)"
         required: true
-        default: "1.14.0"
+        default: "1.16.0"
       target_arch:
         description: "Target architecture (amd64, arm64, armhf, mipsel, mips)"
         required: true
-        default: "amd64"
+        default: "mipsel"
       build_selftest:
         description: "Whether to build zerotier-selftest"
         required: false
