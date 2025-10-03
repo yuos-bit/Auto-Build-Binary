@@ -59,7 +59,7 @@ jobs:
       - name: Build prometheus-cpp from source
         run: |
           curl -L -o prometheus-cpp.tar.gz https://github.com/jupp0r/prometheus-cpp/releases/download/v1.3.0/prometheus-cpp-with-submodules.tar.gz
-          tar -xzf prometheus-cpp.tar.gz
+          tar -xvf prometheus-cpp.tar.gz
           cd prometheus-cpp-1.3.0
           mkdir build && cd build
           cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -G Ninja
