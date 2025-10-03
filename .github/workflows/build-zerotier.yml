@@ -4,9 +4,21 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'ZeroTierOne release tag (e.g. 1.16.0)'
-        required: false
-        default: ''
+        description: 'Select ZeroTierOne release tag'
+        required: true
+        default: '1.16.0'
+        type: choice
+        options:
+          - '1.16.0'
+          - '1.14.2'
+          - '1.14.1'
+          - '1.14.0'
+          - '1.12.2'
+          - '1.12.1'
+          - '1.12.0'
+          - '1.10.6'
+          - '1.10.5'
+          - '1.10.4'
 
 jobs:
   build-mipsle:
@@ -21,16 +33,11 @@ jobs:
       - name: Determine ZeroTierOne version
         id: get_version
         run: |
-          if [ -z "${{ github.event.inputs.tag }}" ]; then
-            TAG=$(curl -s https://api.github.com/repos/zerotier/ZeroTierOne/tags | \
-              jq -r '.[0].name')
-          else
-            TAG="${{ github.event.inputs.tag }}"
-          fi
+          TAG="${{ github.event.inputs.tag }}"
           echo "Using ZeroTierOne version: $TAG"
           echo "ZT_VERSION=$TAG" >> $GITHUB_OUTPUT
 
-      - name: Clean previous build
+      - name: Clean previous artifacts
         run: |
           rm -rf ZeroTierOne-* zerotier-one-mipsle-*.tar.gz
 
@@ -40,38 +47,27 @@ jobs:
           wget -q https://github.com/zerotier/ZeroTierOne/archive/refs/tags/${{ steps.get_version.outputs.ZT_VERSION }}.tar.gz
           echo "Extracting..."
           tar -xzf ${{ steps.get_version.outputs.ZT_VERSION }}.tar.gz
-          ls -l ZeroTierOne-${{ steps.get_version.outputs.ZT_VERSION }}
+          DIR=$(tar -tzf ${{ steps.get_version.outputs.ZT_VERSION }}.tar.gz | head -1 | cut -f1 -d"/")
+          echo "Extracted directory: $DIR"
+          echo "DIR=$DIR" >> $GITHUB_ENV
+          ls -l "$DIR"
 
       - name: Cross-compile ZeroTierOne in Docker
         run: |
-          DIR="$GITHUB_WORKSPACE/ZeroTierOne-${{ steps.get_version.outputs.ZT_VERSION }}"
-          echo "Checking Docker container and source directory..."
           docker run --rm \
             -v $DIR:/work:rw \
             -w /work \
             rustreleaser/cross:mipsel-unknown-linux-musl \
             bash -c "\
-              echo 'Listing files in /work:' && ls -l && \
-              echo 'Checking cross-compiler...' && which mipsel-linux-muslsf-gcc && \
               export ZT_SKIP_RUST=1 && \
               export CC=mipsel-linux-muslsf-gcc && \
               export CXX=mipsel-linux-muslsf-g++ && \
               export AR=mipsel-linux-muslsf-ar && \
               export RANLIB=mipsel-linux-muslsf-ranlib && \
-              make OSTYPE=Linux || { echo 'Make failed'; exit 1; }"
-
-      - name: Verify build
-        run: |
-          DIR="ZeroTierOne-${{ steps.get_version.outputs.ZT_VERSION }}"
-          if [ ! -f "$DIR/zerotier-one" ]; then
-            echo "Error: zerotier-one binary not found!"
-            exit 1
-          fi
-          echo "Build succeeded. Binary located at $DIR/zerotier-one"
+              make OSTYPE=Linux"
 
       - name: Package binary
         run: |
-          DIR="ZeroTierOne-${{ steps.get_version.outputs.ZT_VERSION }}"
           cd $DIR
           mkdir -p release
           cp zerotier-one release/
