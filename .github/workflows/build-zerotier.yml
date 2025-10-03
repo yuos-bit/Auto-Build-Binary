@@ -14,7 +14,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -22,11 +22,13 @@ jobs:
       - name: Set up build environment
         run: |
           sudo apt-get update
-          sudo apt-get install -y nlohmann-json3-dev prometheus-cpp build-essential git cmake pkg-config \
+          sudo apt-get install -y build-essential cmake git wget curl unzip \
+            pkg-config autoconf automake libtool \
+            nlohmann-json3-dev libcurl4-openssl-dev libssl-dev
+          sudo apt-get install -y gcc-mipsel-linux-gnu g++-mipsel-linux-gnu \
+            gcc-mips-linux-gnu g++-mips-linux-gnu \
             gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
-            gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf \
-            gcc-mipsel-linux-gnu g++-mipsel-linux-gnu \
-            gcc-mips-linux-gnu g++-mips-linux-gnu
+            gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf
 
       - name: Download ZeroTier source
         run: |
