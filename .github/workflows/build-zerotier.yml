@@ -1,10 +1,10 @@
-name: Build ZeroTierOne for MIPSLE
+name: Build ZeroTierOne
 
 on:
   workflow_dispatch:
     inputs:
-      tag:
-        description: 'Select ZeroTierOne release tag'
+      ZT_VERSION:
+        description: '选择 ZeroTier 版本'
         required: true
         default: '1.16.0'
         type: choice
@@ -19,64 +19,67 @@ on:
           - '1.10.6'
           - '1.10.5'
           - '1.10.4'
+      ARCH:
+        description: '选择目标架构'
+        required: true
+        default: 'mipsel'
+        type: choice
+        options:
+          - 'mipsel'
+          - 'arm'
+          - 'x86_64'
 
 jobs:
-  build-mipsle:
+  build:
+    name: Build ZeroTierOne Binary
     runs-on: ubuntu-latest
 
     steps:
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y wget tar jq
+      - name: Checkout repo
+        uses: actions/checkout@v4
 
-      - name: Determine ZeroTierOne version
-        id: get_version
+      - name: Set up directories
         run: |
-          TAG="${{ github.event.inputs.tag }}"
-          echo "Using ZeroTierOne version: $TAG"
-          echo "ZT_VERSION=$TAG" >> $GITHUB_OUTPUT
+          mkdir -p build
+          DIR=$PWD/ZeroTierOne-${{ github.event.inputs.ZT_VERSION }}
 
-      - name: Clean previous artifacts
+      - name: Download ZeroTier source
         run: |
-          rm -rf ZeroTierOne-* zerotier-one-mipsle-*.tar.gz
+          curl -LO https://github.com/zerotier/ZeroTierOne/archive/refs/tags/${{ github.event.inputs.ZT_VERSION }}.tar.gz
+          tar -xzf ${{ github.event.inputs.ZT_VERSION }}.tar.gz
 
-      - name: Download and extract ZeroTierOne
+      - name: Build ZeroTier using Docker
         run: |
-          echo "Downloading ZeroTierOne source..."
-          wget -q https://github.com/zerotier/ZeroTierOne/archive/refs/tags/${{ steps.get_version.outputs.ZT_VERSION }}.tar.gz
-          echo "Extracting..."
-          tar -xzf ${{ steps.get_version.outputs.ZT_VERSION }}.tar.gz
-          DIR=$(tar -tzf ${{ steps.get_version.outputs.ZT_VERSION }}.tar.gz | head -1 | cut -f1 -d"/")
-          echo "Extracted directory: $DIR"
-          echo "DIR=$DIR" >> $GITHUB_ENV
-          ls -l "$DIR"
-
-      - name: Cross-compile ZeroTierOne in Docker
-        run: |
+          DIR=$PWD/ZeroTierOne-${{ github.event.inputs.ZT_VERSION }}
           docker run --rm \
             -v $DIR:/work:rw \
             -w /work \
-            rustreleaser/cross:mipsel-unknown-linux-musl \
-            bash -c "\
-              export ZT_SKIP_RUST=1 && \
-              export CC=mipsel-linux-muslsf-gcc && \
-              export CXX=mipsel-linux-muslsf-g++ && \
-              export AR=mipsel-linux-muslsf-ar && \
-              export RANLIB=mipsel-linux-muslsf-ranlib && \
+            rustreleaser/cross:${{ github.event.inputs.ARCH }}-unknown-linux-musl \
+            bash -c "
+              export ZT_SKIP_RUST=1 &&
+              export CC=${{ github.event.inputs.ARCH }}-linux-muslsf-gcc &&
+              export CXX=${{ github.event.inputs.ARCH }}-linux-muslsf-g++ &&
+              export AR=${{ github.event.inputs.ARCH }}-linux-muslsf-ar &&
+              export RANLIB=${{ github.event.inputs.ARCH }}-linux-muslsf-ranlib &&
               make OSTYPE=Linux"
 
       - name: Package binary
         run: |
-          cd $DIR
           mkdir -p release
-          cp zerotier-one release/
-          cp LICENSE.txt release/
-          tar -czvf ../zerotier-one-mipsle-${{ steps.get_version.outputs.ZT_VERSION }}.tar.gz -C release .
+          cp $PWD/ZeroTierOne-${{ github.event.inputs.ZT_VERSION }}/zerotier-one release/
+          tar -czf zerotier-one-${{ github.event.inputs.ZT_VERSION }}-${{ github.event.inputs.ARCH }}.tar.gz -C release zerotier-one
 
       - name: Upload Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v1
         with:
-          files: zerotier-one-mipsle-${{ steps.get_version.outputs.ZT_VERSION }}.tar.gz
+          tag_name: v${{ github.event.inputs.ZT_VERSION }}
+          name: ZeroTierOne-${{ github.event.inputs.ZT_VERSION }}-${{ github.event.inputs.ARCH }}
+          body: "ZeroTierOne ${{ github.event.inputs.ZT_VERSION }} binary for ${{ github.event.inputs.ARCH }}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifact (optional)
+        uses: actions/upload-artifact@v3
+        with:
+          name: zerotier-one-${{ github.event.inputs.ZT_VERSION }}-${{ github.event.inputs.ARCH }}
+          path: zerotier-one-${{ github.event.inputs.ZT_VERSION }}-${{ github.event.inputs.ARCH }}.tar.gz
