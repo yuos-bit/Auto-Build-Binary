@@ -5,6 +5,11 @@ on:
     tags:
       - 'v*'  # 当推送类似v1.2.3的标签时触发
   workflow_dispatch:  # 允许手动触发
+    inputs:
+      zt_version:
+        description: 'ZeroTier One版本号 (例如: 1.16.0)'
+        required: true
+        default: '1.16.0'
 
 jobs:
   build:
@@ -41,20 +46,23 @@ jobs:
             rust_target: mips-unknown-linux-gnu
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - name: Checkout specific version
+        run: |
+          VERSION=${{ github.event.inputs.zt_version || github.ref_name }}
+          # 移除可能的v前缀
+          VERSION=${VERSION#v}
+          git clone --depth 1 --branch $VERSION https://github.com/zerotier/ZeroTierOne.git .
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
       - name: Build and extract ZeroTier binaries
         run: |
-          # 创建输出目录
+          VERSION=${{ github.event.inputs.zt_version || github.ref_name }}
+          VERSION=${VERSION#v}
           mkdir -p build-output/${{ matrix.arch }}
           
-          # 运行Docker容器进行编译
           docker run --rm -v $PWD:/workspace -w /workspace ${{ matrix.docker_image }} /bin/bash -c "
-            # 安装依赖
             apt-get update && apt-get install -y \
               build-essential \
               git \
@@ -66,42 +74,41 @@ jobs:
               pkg-config \
               curl \
               binutils \
-              ${CROSS_PREFIX}gcc \
-              ${CROSS_PREFIX}g++ \
-              ${CROSS_PREFIX}libc6-dev \
-              ${CROSS_PREFIX}openssl \
-              ${CROSS_PREFIX}pkg-config
+              ${{ matrix.cross_prefix }}gcc \
+              ${{ matrix.cross_prefix }}g++ \
+              ${{ matrix.cross_prefix }}libc6-dev \
+              ${{ matrix.cross_prefix }}openssl \
+              ${{ matrix.cross_prefix }}pkg-config
             
-            # 安装Rust
             curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
             source \$HOME/.cargo/env
             rustup target add ${{ matrix.rust_target }}
             
-            # 编译ZeroTier
             make CC=${{ matrix.cross_prefix }}gcc CXX=${{ matrix.cross_prefix }}g++
             
-            # 运行自测试（如果需要）
-            # make selftest
+            # 运行自测试
+            make selftest
+            ./zerotier-selftest
             
-            # 复制编译产物
             cp zerotier-one /workspace/build-output/${{ matrix.arch }}/
             cp zerotier-cli /workspace/build-output/${{ matrix.arch }}/
             cp zerotier-idtool /workspace/build-output/${{ matrix.arch }}/
           "
-        env:
-          CROSS_PREFIX: ${{ matrix.cross_prefix }}
 
       - name: Create tarball
         run: |
+          VERSION=${{ github.event.inputs.zt_version || github.ref_name }}
+          VERSION=${VERSION#v}
           cd build-output/${{ matrix.arch }}
-          tar -czf ../../zerotier-${{ github.ref_name }}-linux-${{ matrix.arch }}.tar.gz *
+          tar -czf ../../zerotier-${VERSION}-linux-${{ matrix.arch }}.tar.gz *
           cd ../..
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: zerotier-${{ matrix.arch }}
-          path: zerotier-${{ github.ref_name }}-linux-${{ matrix.arch }}.tar.gz
+          path: zerotier-*.tar.gz
+          retention-days: 7
 
   release:
     name: Create Release
