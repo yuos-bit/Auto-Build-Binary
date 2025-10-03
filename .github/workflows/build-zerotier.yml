@@ -22,7 +22,6 @@ jobs:
             make \
             git \
             libssl-dev \
-            # 添加必要的系统库
             libc6-dev-mipsel-cross \
             linux-libc-dev-mipsel-cross
 
@@ -52,10 +51,7 @@ jobs:
           CARGO_TARGET_MIPSEL_UNKNOWN_LINUX_GNU_LINKER: mipsel-linux-gnu-gcc
         run: |
           source $HOME/.cargo/env
-          # 构建时忽略 Rust 目标组件缺失的错误（适用于纯 C/C++ 部分）
           make || make ZT_SKIP_RUST=1
-
-          # 验证二进制文件架构
           file zerotier-one
 
       - name: Package binary
