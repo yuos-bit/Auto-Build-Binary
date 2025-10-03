@@ -83,7 +83,7 @@ jobs:
           esac
           echo "Using compiler: $CC, $CXX"
 
-      - name: Build prometheus-cpp for target
+      - name: Build prometheus-cpp for target (headers + static library only)
         run: |
           INSTALL_DIR="$HOME/sysroot"
           curl -L -o prometheus-cpp.tar.gz https://github.com/jupp0r/prometheus-cpp/releases/download/v1.3.0/prometheus-cpp-with-submodules.tar.gz
