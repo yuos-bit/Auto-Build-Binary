@@ -1,4 +1,4 @@
-name: Build ZeroTierOne for MIPSLE with Clang
+name: Build ZeroTierOne for MIPSLE with Cross Docker
 
 on:
   push:
@@ -14,58 +14,31 @@ jobs:
         uses: actions/checkout@v4
         with:
           path: ZeroTierOne-1.16.0
-          # 匹配本地目录结构
-          fetch-depth: 0
-          # 确保能获取标签
-
-      - name: Set up build environment
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            clang \
-            lld \
-            llvm \
-            make \
-            git \
-            libssl-dev \
-            libc6-dev-mipsel-cross \
-            linux-libc-dev-mipsel-cross \
-            binutils-mipsel-linux-gnu
-
-          # 安装Rust环境
-          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-          source $HOME/.cargo/env
-          rustup target add mipsel-unknown-linux-musl
+          fetch-depth: 0  # 确保能获取标签
 
       - name: Prepare version variables
         id: vars
         working-directory: ./ZeroTierOne-1.16.0
         run: |
-          # 修复标签获取失败问题
           if ! ZT_VERSION=$(git describe --abbrev=0 --tags); then
-            ZT_VERSION="1.16.0"  # 硬编码匹配目录版本
+            ZT_VERSION="1.16.0"
           fi
           echo "ZT_VERSION=$ZT_VERSION" >> $GITHUB_OUTPUT
 
-      - name: Cross-compile ZeroTierOne
+      - name: Cross-compile ZeroTierOne using Docker Cross
         working-directory: ./ZeroTierOne-1.16.0
-        env:
-          # 明确指定MIPSLE交叉编译工具链
-          CC: mipsel-linux-muslsf-gcc
-          CXX: mipsel-linux-muslsf-g++
-          AR: mipsel-linux-muslsf-ar
-          RANLIB: mipsel-linux-muslsf-ranlib
-          # 传递交叉编译目标给Makefile
-          ZT_TARGET: mipsel-unknown-linux-musl
-          # 禁用Rust相关模块（如果不需要）
-          ZT_SKIP_RUST: 1
         run: |
-          source $HOME/.cargo/env
-          # 直接使用项目根目录的Makefile，确保能找到make-linux.mk
-          # 显式指定Linux平台以避免自动检测问题
-          make OSTYPE=Linux || { echo "Make failed"; exit 1; }
-          # 验证编译产物
-          file zerotier-one
+          docker run --rm \
+            -v $GITHUB_WORKSPACE:/work \
+            -w /work/ZeroTierOne-1.16.0 \
+            rustreleaser/cross:mipsel-unknown-linux-musl \
+            bash -c "export ZT_SKIP_RUST=1 && \
+                     export CC=mipsel-linux-muslsf-gcc && \
+                     export CXX=mipsel-linux-muslsf-g++ && \
+                     export AR=mipsel-linux-muslsf-ar && \
+                     export RANLIB=mipsel-linux-muslsf-ranlib && \
+                     make OSTYPE=Linux && \
+                     file zerotier-one"
 
       - name: Package binary
         working-directory: ./ZeroTierOne-1.16.0
