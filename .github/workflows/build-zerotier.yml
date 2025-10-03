@@ -62,6 +62,24 @@ jobs:
           echo "Using compiler: $CC, $CXX"
           mkdir -p $INSTALL_DIR
 
+      - name: Build ncurses (Static)
+        run: |
+          curl -L -o ncurses.tar.gz https://ftp.gnu.org/pub/gnu/ncurses/ncurses-6.4.tar.gz
+          tar -xzf ncurses.tar.gz
+          cd ncurses-6.4
+          mkdir build && cd build
+          ../configure \
+            --host=${{ github.event.inputs.ARCH }}-linux-gnu \
+            --prefix=$INSTALL_DIR \
+            --with-shared=no \
+            --with-normal \
+            --enable-widec \
+            CFLAGS="-O2 -fPIC" \
+            CXXFLAGS="-O2 -fPIC" \
+            LDFLAGS="-static"
+          make -j$(nproc)
+          make install
+
       - name: Build Prometheus-cpp (Static)
         run: |
           curl -L -o prometheus-cpp.tar.gz https://github.com/jupp0r/prometheus-cpp/releases/download/v1.3.0/prometheus-cpp-with-submodules.tar.gz
@@ -95,7 +113,9 @@ jobs:
             -DCMAKE_CXX_STANDARD=17 \
             -DCMAKE_PREFIX_PATH=$INSTALL_DIR \
             -DCMAKE_FIND_ROOT_PATH=$INSTALL_DIR \
-            -DCMAKE_EXE_LINKER_FLAGS="-static" \
+            -DCURSES_LIBRARY=$INSTALL_DIR/lib/libncursesw.a \
+            -DCURSES_INCLUDE_PATH=$INSTALL_DIR/include \
+            -DCMAKE_EXE_LINKER_FLAGS="-static -L$INSTALL_DIR/lib" \
             -G Ninja
           ninja -v
 
