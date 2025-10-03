@@ -1,155 +1,131 @@
-name: Build ZeroTier Binary with Clang
+name: Build ZeroTier for Multiple Architectures
 
 on:
-  workflow_dispatch:
-    inputs:
-      zerotier_version:
-        description: "ZeroTier version (e.g. 1.14.0)"
-        required: true
-        default: "1.16.0"
-      target_arch:
-        description: "Target architecture (amd64, arm64, armhf, mipsel, mips)"
-        required: true
-        default: "mipsel"
-      build_selftest:
-        description: "Whether to build zerotier-selftest"
-        required: false
-        default: "true"
+  push:
+    tags:
+      - 'v*'  # 当推送类似v1.2.3的标签时触发
+  workflow_dispatch:  # 允许手动触发
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    name: Build for ${{ matrix.arch }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            docker_image: ubuntu:20.04
+            cross_prefix: ""
+            target: x86_64-linux-gnu
+            rust_target: x86_64-unknown-linux-gnu
+          - arch: arm64
+            docker_image: multiarch/ubuntu-core:arm64-focal
+            cross_prefix: aarch64-linux-gnu-
+            target: aarch64-linux-gnu
+            rust_target: aarch64-unknown-linux-gnu
+          - arch: armhf
+            docker_image: multiarch/ubuntu-core:armhf-focal
+            cross_prefix: arm-linux-gnueabihf-
+            target: arm-linux-gnueabihf
+            rust_target: armv7-unknown-linux-gnueabihf
+          - arch: mipsel
+            docker_image: multiarch/ubuntu-core:mipsel-focal
+            cross_prefix: mipsel-linux-gnu-
+            target: mipsel-linux-gnu
+            rust_target: mipsel-unknown-linux-gnu
+          - arch: mips
+            docker_image: multiarch/ubuntu-core:mips-focal
+            cross_prefix: mips-linux-gnu-
+            target: mips-linux-gnu
+            rust_target: mips-unknown-linux-gnu
+
     steps:
-      - name: Checkout repo
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install Clang, cross toolchains and dependencies
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and extract ZeroTier binaries
         run: |
-          sudo apt-get update
-          sudo apt-get install -y clang-15 clang-tools-15 clang-tidy-15 \
-            build-essential cmake git wget unzip pkg-config autoconf automake libtool \
-            nlohmann-json3-dev libcurl4-openssl-dev libssl-dev zlib1g-dev
+          # 创建输出目录
+          mkdir -p build-output/${{ matrix.arch }}
+          
+          # 运行Docker容器进行编译
+          docker run --rm -v $PWD:/workspace -w /workspace ${{ matrix.docker_image }} /bin/bash -c "
+            # 安装依赖
+            apt-get update && apt-get install -y \
+              build-essential \
+              git \
+              make \
+              gcc \
+              g++ \
+              libc6-dev \
+              libssl-dev \
+              pkg-config \
+              curl \
+              binutils \
+              ${CROSS_PREFIX}gcc \
+              ${CROSS_PREFIX}g++ \
+              ${CROSS_PREFIX}libc6-dev \
+              ${CROSS_PREFIX}openssl \
+              ${CROSS_PREFIX}pkg-config
+            
+            # 安装Rust
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+            source \$HOME/.cargo/env
+            rustup target add ${{ matrix.rust_target }}
+            
+            # 编译ZeroTier
+            make CC=${{ matrix.cross_prefix }}gcc CXX=${{ matrix.cross_prefix }}g++
+            
+            # 运行自测试（如果需要）
+            # make selftest
+            
+            # 复制编译产物
+            cp zerotier-one /workspace/build-output/${{ matrix.arch }}/
+            cp zerotier-cli /workspace/build-output/${{ matrix.arch }}/
+            cp zerotier-idtool /workspace/build-output/${{ matrix.arch }}/
+          "
+        env:
+          CROSS_PREFIX: ${{ matrix.cross_prefix }}
 
-          # Install cross toolchains
-          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
-            gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf \
-            gcc-mipsel-linux-gnu g++-mipsel-linux-gnu \
-            gcc-mips-linux-gnu g++-mips-linux-gnu
-
-          # Set clang-15 as default
-          sudo update-alternatives --install /usr/bin/cc cc /usr/bin/clang-15 100
-          sudo update-alternatives --install /usr/bin/c++ c++ /usr/bin/clang++-15 100
-
-          # Build prometheus-cpp
-          git clone --branch v1.1.0 https://github.com/jupp0r/prometheus-cpp.git
-          cd prometheus-cpp
-          git submodule update --init --recursive
-          mkdir _build && cd _build
-          cmake .. -DBUILD_SHARED_LIBS=ON -DENABLE_PUSH=OFF -DENABLE_COMPRESSION=OFF \
-            -DCMAKE_INSTALL_PREFIX=/usr/local
-          make -j$(nproc)
-          sudo make install
-          cd ../../
-
-      - name: Download ZeroTier source
+      - name: Create tarball
         run: |
-          wget https://github.com/zerotier/ZeroTierOne/archive/refs/tags/${{ github.event.inputs.zerotier_version }}.tar.gz
-          tar -xzf ${{ github.event.inputs.zerotier_version }}.tar.gz
-          mv ZeroTierOne-${{ github.event.inputs.zerotier_version }} zerotier-src
+          cd build-output/${{ matrix.arch }}
+          tar -czf ../../zerotier-${{ github.ref_name }}-linux-${{ matrix.arch }}.tar.gz *
+          cd ../..
 
-      - name: Build ZeroTier with Clang
-        run: |
-          cd zerotier-src
-          mkdir build && cd build
-
-          export CMAKE_PREFIX_PATH=/usr/local
-          export CXXFLAGS="-I/usr/local/include"
-          export LDFLAGS="-L/usr/local/lib"
-
-          PROMETHEUS_DIR=/usr/local/lib/cmake/PrometheusCpp
-
-          case "${{ github.event.inputs.target_arch }}" in
-            amd64)
-              cmake .. -DCMAKE_BUILD_TYPE=Release \
-                -DCMAKE_C_COMPILER=clang \
-                -DCMAKE_CXX_COMPILER=clang++ \
-                -DPrometheusCpp_DIR=$PROMETHEUS_DIR
-              ;;
-            arm64)
-              cmake .. -DCMAKE_BUILD_TYPE=Release \
-                -DCMAKE_C_COMPILER=clang \
-                -DCMAKE_CXX_COMPILER=clang++ \
-                -DCMAKE_SYSROOT=/usr/aarch64-linux-gnu \
-                -DCMAKE_FIND_ROOT_PATH=/usr/aarch64-linux-gnu \
-                -DCMAKE_C_COMPILER_TARGET=aarch64-linux-gnu \
-                -DCMAKE_CXX_COMPILER_TARGET=aarch64-linux-gnu \
-                -DPrometheusCpp_DIR=$PROMETHEUS_DIR
-              ;;
-            armhf)
-              cmake .. -DCMAKE_BUILD_TYPE=Release \
-                -DCMAKE_C_COMPILER=clang \
-                -DCMAKE_CXX_COMPILER=clang++ \
-                -DCMAKE_SYSROOT=/usr/arm-linux-gnueabihf \
-                -DCMAKE_FIND_ROOT_PATH=/usr/arm-linux-gnueabihf \
-                -DCMAKE_C_COMPILER_TARGET=arm-linux-gnueabihf \
-                -DCMAKE_CXX_COMPILER_TARGET=arm-linux-gnueabihf \
-                -DPrometheusCpp_DIR=$PROMETHEUS_DIR
-              ;;
-            mipsel)
-              cmake .. -DCMAKE_BUILD_TYPE=Release \
-                -DCMAKE_C_COMPILER=clang \
-                -DCMAKE_CXX_COMPILER=clang++ \
-                -DCMAKE_SYSROOT=/usr/mipsel-linux-gnu \
-                -DCMAKE_FIND_ROOT_PATH=/usr/mipsel-linux-gnu \
-                -DCMAKE_C_COMPILER_TARGET=mipsel-linux-gnu \
-                -DCMAKE_CXX_COMPILER_TARGET=mipsel-linux-gnu \
-                -DPrometheusCpp_DIR=$PROMETHEUS_DIR
-              ;;
-            mips)
-              cmake .. -DCMAKE_BUILD_TYPE=Release \
-                -DCMAKE_C_COMPILER=clang \
-                -DCMAKE_CXX_COMPILER=clang++ \
-                -DCMAKE_SYSROOT=/usr/mips-linux-gnu \
-                -DCMAKE_FIND_ROOT_PATH=/usr/mips-linux-gnu \
-                -DCMAKE_C_COMPILER_TARGET=mips-linux-gnu \
-                -DCMAKE_CXX_COMPILER_TARGET=mips-linux-gnu \
-                -DPrometheusCpp_DIR=$PROMETHEUS_DIR
-              ;;
-            *)
-              echo "Unsupported architecture"
-              exit 1
-              ;;
-          esac
-
-          make -j$(nproc)
-
-          if [ "${{ github.event.inputs.build_selftest }}" == "true" ]; then
-            make zerotier-selftest
-          fi
-
-          cd ..
-          tar czf ../zerotier-${{ github.event.inputs.zerotier_version }}-${{ github.event.inputs.target_arch }}.tar.gz build/zerotier*
-
-      - name: Upload artifact
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: zerotier-${{ github.event.inputs.target_arch }}
-          path: zerotier-${{ github.event.inputs.zerotier_version }}-${{ github.event.inputs.target_arch }}.tar.gz
+          name: zerotier-${{ matrix.arch }}
+          path: zerotier-${{ github.ref_name }}-linux-${{ matrix.arch }}.tar.gz
 
   release:
+    name: Create Release
     needs: build
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     steps:
-      - name: Download artifact
+      - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
-          name: zerotier-${{ github.event.inputs.target_arch }}
-          path: ./release
+          path: artifacts
+          
+      - name: Display structure of downloaded files
+        run: ls -R artifacts
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.inputs.zerotier_version }}
-          files: ./release/*
+          files: |
+            artifacts/zerotier-amd64/zerotier-*.tar.gz
+            artifacts/zerotier-arm64/zerotier-*.tar.gz
+            artifacts/zerotier-armhf/zerotier-*.tar.gz
+            artifacts/zerotier-mipsel/zerotier-*.tar.gz
+            artifacts/zerotier-mips/zerotier-*.tar.gz
+          draft: false
+          prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
