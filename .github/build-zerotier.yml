@@ -1,0 +1,74 @@
+name: Build Zerotier Binary (mipsel)
+
+on:
+  workflow_dispatch:
+    inputs:
+      arch:
+        description: 'Target architecture'
+        required: true
+        default: 'mipsel'
+        type: choice
+        options:
+        - mipsel
+        - mips
+        - arm
+        - aarch64
+        - x86_64
+
+env:
+  TZ: Asia/Shanghai
+  REPO_URL: https://github.com/zerotier/ZeroTierOne.git
+  BUILD_DIR: /opt/zerotier
+  OUT_DIR: /opt/output
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: |
+        sudo apt update
+        sudo apt install -y build-essential cmake git wget curl unzip \
+          g++-multilib gcc-multilib pkg-config
+
+    - name: Setup cross toolchain (mipsel)
+      if: github.event.inputs.arch == 'mipsel'
+      run: |
+        mkdir -p /opt/toolchain
+        cd /opt/toolchain
+        wget https://musl.cc/mipsel-linux-muslsf-cross.tgz
+        tar -xf mipsel-linux-muslsf-cross.tgz
+        echo "/opt/toolchain/mipsel-linux-muslsf-cross/bin" >> $GITHUB_PATH
+
+    - name: Clone Zerotier
+      run: |
+        git clone --depth=1 $REPO_URL $BUILD_DIR
+
+    - name: Build Zerotier (mipsel)
+      run: |
+        cd $BUILD_DIR
+        make clean
+        make CC=mipsel-linux-musl-gcc CXX=mipsel-linux-musl-g++ ARCH=${{ github.event.inputs.arch }}
+        mkdir -p $OUT_DIR
+        cp zerotier-one $OUT_DIR/zerotier-one-${{ github.event.inputs.arch }}
+        cp zerotier-cli $OUT_DIR/zerotier-cli-${{ github.event.inputs.arch }}
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: zerotier-${{ github.event.inputs.arch }}
+        path: ${{ env.OUT_DIR }}/*
+
+    - name: Release
+      uses: softprops/action-gh-release@v2
+      if: success()
+      with:
+        files: ${{ env.OUT_DIR }}/*
+        tag_name: zerotier-${{ github.event.inputs.arch }}-${{ github.run_number }}
+        name: Zerotier ${{ github.event.inputs.arch }} Build
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
