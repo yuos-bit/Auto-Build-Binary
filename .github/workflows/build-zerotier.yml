@@ -43,7 +43,10 @@ jobs:
         curl -L -o $TOOLCHAIN_DIR/mipsel-linux-muslsf-cross.tgz \
           https://github.com/yuos-bit/Auto-Build-Binary/releases/download/Toolchain/mipsel-linux-muslsf-cross.tgz
         tar -xzf $TOOLCHAIN_DIR/mipsel-linux-muslsf-cross.tgz -C $TOOLCHAIN_DIR
-        echo "$TOOLCHAIN_DIR/mipsel-linux-muslsf-cross/bin" >> $GITHUB_PATH
+        # 设置正确的 bin 路径
+        echo "$TOOLCHAIN_DIR/mipsel-linux-muslsf-cross/mipsel-linux-muslsf/bin" >> $GITHUB_PATH
+        export PATH="$TOOLCHAIN_DIR/mipsel-linux-muslsf-cross/mipsel-linux-muslsf/bin:$PATH"
+        which mipsel-linux-musl-gcc
 
     - name: Clone Zerotier
       run: |
@@ -57,6 +60,8 @@ jobs:
         case "${{ matrix.arch }}" in
           mipsel)
             echo "Building for mipsel using musl cross toolchain..."
+            # 确保 PATH 正确
+            export PATH="$TOOLCHAIN_DIR/mipsel-linux-muslsf-cross/mipsel-linux-muslsf/bin:$PATH"
             make CC=mipsel-linux-musl-gcc CXX=mipsel-linux-musl-g++ ARCH=mipsel
             ;;
           *)
