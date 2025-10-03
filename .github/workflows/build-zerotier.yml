@@ -11,57 +11,36 @@ on:
         options:
           - 'x86_64'
           - 'aarch64'
-          - 'mipsel'
           - 'armv7'
+          - 'mipsel'
       VERSION:
         description: 'Zerotier Version'
         required: true
         default: '1.16.0'
-        type: choice
-        options:
-          - '1.16.0'
-          - '1.14.2'
-          - '1.14.1'
-          - '1.14.0'
-          - '1.12.2'
-          - '1.12.1'
-          - '1.12.0'
-          - '1.10.6'
-          - '1.10.5'
-          - '1.10.4'
 
 jobs:
   build:
     runs-on: ubuntu-22.04
+    env:
+      INSTALL_DIR: ${{ github.workspace }}/sysroot
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Install Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            build-essential \
-            gcc g++ \
-            clang \
-            cmake \
-            ninja-build \
-            git \
-            curl wget unzip \
-            pkg-config \
-            autoconf automake libtool \
+            build-essential gcc g++ clang cmake ninja-build git curl wget unzip \
+            pkg-config autoconf automake libtool \
             qemu-user-static \
-            crossbuild-essential-arm64 \
-            crossbuild-essential-armhf \
-            crossbuild-essential-mipsel \
-            zlib1g-dev \
-            libcurl4-openssl-dev \
-            nlohmann-json3-dev
+            crossbuild-essential-arm64 crossbuild-essential-armhf crossbuild-essential-mipsel \
+            zlib1g-dev libcurl4-openssl-dev nlohmann-json3-dev \
+            libncurses5-dev libncursesw5-dev
 
-      - name: Configure Compiler
+      - name: Setup Cross Compiler
         run: |
-          EXTRA_LDFLAGS=""
-          INSTALL_DIR="$HOME/sysroot"
           case "${{ github.event.inputs.ARCH }}" in
             x86_64)
               export CC=gcc
@@ -78,16 +57,15 @@ jobs:
             mipsel)
               export CC=mipsel-linux-gnu-gcc
               export CXX=mipsel-linux-gnu-g++
-              EXTRA_LDFLAGS="-latomic"
               ;;
           esac
           echo "Using compiler: $CC, $CXX"
           mkdir -p $INSTALL_DIR
 
-      - name: Build prometheus-cpp for target (headers + static library only)
+      - name: Build Prometheus-cpp (Static)
         run: |
           curl -L -o prometheus-cpp.tar.gz https://github.com/jupp0r/prometheus-cpp/releases/download/v1.3.0/prometheus-cpp-with-submodules.tar.gz
-          tar -xvf prometheus-cpp.tar.gz
+          tar -xzf prometheus-cpp.tar.gz
           cd prometheus-cpp-with-submodules
           mkdir build && cd build
           cmake .. \
@@ -96,8 +74,6 @@ jobs:
             -DCMAKE_C_COMPILER=$CC \
             -DCMAKE_CXX_COMPILER=$CXX \
             -DCMAKE_INSTALL_PREFIX=$INSTALL_DIR \
-            -DZLIB_LIBRARY=/usr/lib/${{ github.event.inputs.ARCH }}-linux-gnu/libz.so \
-            -DZLIB_INCLUDE_DIR=/usr/include \
             -DENABLE_TESTING=OFF \
             -DENABLE_PUSH_PULL_TESTING=OFF \
             -DENABLE_SAMPLE=OFF \
@@ -105,25 +81,21 @@ jobs:
             -G Ninja
           ninja install
 
-      - name: Download Zerotier Source
+      - name: Build Zerotier
         run: |
           curl -L -o zerotier-${{ github.event.inputs.VERSION }}.tar.gz \
             https://github.com/zerotier/ZeroTierOne/archive/refs/tags/${{ github.event.inputs.VERSION }}.tar.gz
           tar -xzf zerotier-${{ github.event.inputs.VERSION }}.tar.gz
           mv ZeroTierOne-${{ github.event.inputs.VERSION }} zerotier
-
-      - name: Build Zerotier
-        run: |
-          mkdir -p build
-          cd build
-          cmake ../zerotier \
+          mkdir -p zerotier/build && cd zerotier/build
+          cmake .. \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_C_COMPILER=$CC \
             -DCMAKE_CXX_COMPILER=$CXX \
             -DCMAKE_CXX_STANDARD=17 \
             -DCMAKE_PREFIX_PATH=$INSTALL_DIR \
-            -DCMAKE_EXE_LINKER_FLAGS="$EXTRA_LDFLAGS" \
             -DCMAKE_FIND_ROOT_PATH=$INSTALL_DIR \
+            -DCMAKE_EXE_LINKER_FLAGS="-static" \
             -G Ninja
           ninja -v
 
@@ -131,10 +103,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: zerotier-${{ github.event.inputs.VERSION }}-${{ github.event.inputs.ARCH }}
-          path: build/zerotier*
+          path: zerotier/build/zerotier*
 
-      - name: Release
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: build/zerotier*
+          files: zerotier/build/zerotier*
