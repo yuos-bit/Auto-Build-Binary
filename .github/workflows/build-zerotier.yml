@@ -13,14 +13,15 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget tar jq
 
       - name: Determine ZeroTierOne version
         id: get_version
         run: |
           if [ -z "${{ github.event.inputs.tag }}" ]; then
-            # 获取最新 tag
             TAG=$(curl -s https://api.github.com/repos/zerotier/ZeroTierOne/tags | \
               jq -r '.[0].name')
           else
@@ -28,19 +29,20 @@ jobs:
           fi
           echo "ZT_VERSION=$TAG" >> $GITHUB_OUTPUT
 
-      - name: Download ZeroTierOne source
+      - name: Download and extract ZeroTierOne
         run: |
-          wget -O zerotierone.tar.gz https://github.com/zerotier/ZeroTierOne/archive/refs/tags/${{ steps.get_version.outputs.ZT_VERSION }}.tar.gz
-          tar -xzf zerotierone.tar.gz
+          wget -q https://github.com/zerotier/ZeroTierOne/archive/refs/tags/${{ steps.get_version.outputs.ZT_VERSION }}.tar.gz
+          tar -xzf ${{ steps.get_version.outputs.ZT_VERSION }}.tar.gz
 
       - name: Cross-compile ZeroTierOne in Docker
         run: |
-          DIR="ZeroTierOne-${{ steps.get_version.outputs.ZT_VERSION }}"
+          DIR="$GITHUB_WORKSPACE/ZeroTierOne-${{ steps.get_version.outputs.ZT_VERSION }}"
           docker run --rm \
-            -v $GITHUB_WORKSPACE:/work \
-            -w /work/$DIR \
+            -v $DIR:/work:rw \
+            -w /work \
             rustreleaser/cross:mipsel-unknown-linux-musl \
             bash -c "\
+              ls -l && \
               export ZT_SKIP_RUST=1 && \
               export CC=mipsel-linux-muslsf-gcc && \
               export CXX=mipsel-linux-muslsf-g++ && \
