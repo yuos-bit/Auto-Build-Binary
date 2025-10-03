@@ -13,7 +13,8 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          submodules: 'recursive'
+          path: ZeroTierOne-1.16.0  # 明确指定检出目录，匹配本地结构
+          fetch-depth: 0  # 拉取所有历史以确保能获取标签
 
       - name: Set up Clang cross-compilation environment
         run: |
@@ -29,49 +30,53 @@ jobs:
             linux-libc-dev-mipsel-cross \
             binutils-mipsel-linux-gnu
 
+          # 安装Rust环境
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
           source $HOME/.cargo/env
           
+          # 安装MIPSLE Rust目标
           if ! rustup target add mipsel-unknown-linux-gnu; then
             echo "Warning: Prebuilt mipsel target not available, will build from source"
           fi
 
-          rustup component add rust-src
-          cargo install cargo-xbuild
-
       - name: Prepare build variables
         id: vars
+        working-directory: ./ZeroTierOne-1.16.0  # 切换到项目根目录
         run: |
-          echo "ZT_VERSION=$(git describe --abbrev=0 --tags)" >> $GITHUB_OUTPUT
-          echo "ZT_COMMIT=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          # 处理标签获取失败的情况（使用默认版本号）
+          if ! ZT_VERSION=$(git describe --abbrev=0 --tags); then
+            ZT_VERSION="1.16.0"  # 匹配目录中的版本号
+          fi
+          ZT_COMMIT=$(git rev-parse --short HEAD)
+          echo "ZT_VERSION=$ZT_VERSION" >> $GITHUB_OUTPUT
+          echo "ZT_COMMIT=$ZT_COMMIT" >> $GITHUB_OUTPUT
 
       - name: Cross-compile ZeroTierOne with Clang
+        working-directory: ./ZeroTierOne-1.16.0  # 确保在项目根目录编译
         env:
-          # 配置Clang交叉编译器
           CC: clang
           CXX: clang++
-          # 指定MIPSLE目标架构
           CLANG_TARGET: mipsel-unknown-linux-gnu
-          # Rust目标配置
           RUST_TARGET: mipsel-unknown-linux-gnu
-          # 编译flags
           CFLAGS: "--target=mipsel-unknown-linux-gnu -mips32 -EL -msoft-float -I/usr/mipsel-linux-gnu/include"
           CXXFLAGS: "--target=mipsel-unknown-linux-gnu -mips32 -EL -msoft-float -I/usr/mipsel-linux-gnu/include -std=c++11"
           LDFLAGS: "--target=mipsel-unknown-linux-gnu -L/usr/mipsel-linux-gnu/lib -fuse-ld=lld"
-          # Rust链接器配置
           CARGO_TARGET_MIPSEL_UNKNOWN_LINUX_GNU_LINKER: clang
           CARGO_TARGET_MIPSEL_UNKNOWN_LINUX_GNU_RUSTFLAGS: "-C linker=clang -C link-arg=--target=mipsel-unknown-linux-gnu -C link-arg=-fuse-ld=lld"
         run: |
           source $HOME/.cargo/env
-          make CC=clang CXX=clang++ || make CC=clang CXX=clang++ ZT_SKIP_RUST=1
+          # 使用项目中的Makefile，指定Linux目标
+          make -f make-linux.mk CC=clang CXX=clang++ || make -f make-linux.mk CC=clang CXX=clang++ ZT_SKIP_RUST=1
+          # 验证编译结果
           file zerotier-one
 
       - name: Package binary
+        working-directory: ./ZeroTierOne-1.16.0
         run: |
           mkdir -p release
           cp zerotier-one release/
           cp LICENSE.txt release/
-          tar -czvf zerotier-one-mipsle-${{ steps.vars.outputs.ZT_VERSION }}.tar.gz -C release .
+          tar -czvf ../zerotier-one-mipsle-${{ steps.vars.outputs.ZT_VERSION }}.tar.gz -C release .
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
