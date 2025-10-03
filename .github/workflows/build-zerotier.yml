@@ -1,4 +1,4 @@
-name: Build ZeroTierOne for MIPSLE with Cross Docker
+name: Build ZeroTierOne for MIPSLE
 
 on:
   push:
@@ -9,40 +9,40 @@ on:
 jobs:
   build-mipsle:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          path: ZeroTierOne-1.16.0
-          fetch-depth: 0  # 确保能获取标签
+          fetch-depth: 0   # 保证能获取标签
 
       - name: Prepare version variables
         id: vars
-        working-directory: ./ZeroTierOne-1.16.0
         run: |
-          if ! ZT_VERSION=$(git describe --abbrev=0 --tags); then
+          cd ZeroTierOne-1.16.0
+          if ! ZT_VERSION=$(git describe --abbrev=0 --tags 2>/dev/null); then
             ZT_VERSION="1.16.0"
           fi
           echo "ZT_VERSION=$ZT_VERSION" >> $GITHUB_OUTPUT
 
-      - name: Cross-compile ZeroTierOne using Docker Cross
-        working-directory: ./ZeroTierOne-1.16.0
+      - name: Cross-compile ZeroTierOne in Docker
         run: |
           docker run --rm \
             -v $GITHUB_WORKSPACE:/work \
             -w /work/ZeroTierOne-1.16.0 \
             rustreleaser/cross:mipsel-unknown-linux-musl \
-            bash -c "export ZT_SKIP_RUST=1 && \
-                     export CC=mipsel-linux-muslsf-gcc && \
-                     export CXX=mipsel-linux-muslsf-g++ && \
-                     export AR=mipsel-linux-muslsf-ar && \
-                     export RANLIB=mipsel-linux-muslsf-ranlib && \
-                     make OSTYPE=Linux && \
-                     file zerotier-one"
+            bash -c "\
+              export ZT_SKIP_RUST=1 && \
+              export CC=mipsel-linux-muslsf-gcc && \
+              export CXX=mipsel-linux-muslsf-g++ && \
+              export AR=mipsel-linux-muslsf-ar && \
+              export RANLIB=mipsel-linux-muslsf-ranlib && \
+              make -f make-linux.mk OSTYPE=Linux && \
+              file zerotier-one"
 
       - name: Package binary
-        working-directory: ./ZeroTierOne-1.16.0
         run: |
+          cd ZeroTierOne-1.16.0
           mkdir -p release
           cp zerotier-one release/
           cp LICENSE.txt release/
