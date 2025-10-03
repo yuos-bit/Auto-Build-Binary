@@ -1,35 +1,41 @@
 name: Build ZeroTierOne for MIPSLE
 
 on:
-  push:
-    tags:
-      - 'v*'
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'ZeroTierOne release tag (e.g. 1.16.0)'
+        required: false
+        default: ''
 
 jobs:
   build-mipsle:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0   # 保证能获取标签
-
-      - name: Prepare version variables
-        id: vars
+      - name: Determine ZeroTierOne version
+        id: get_version
         run: |
-          cd ZeroTierOne-1.16.0
-          if ! ZT_VERSION=$(git describe --abbrev=0 --tags 2>/dev/null); then
-            ZT_VERSION="1.16.0"
+          if [ -z "${{ github.event.inputs.tag }}" ]; then
+            # 获取最新 tag
+            TAG=$(curl -s https://api.github.com/repos/zerotier/ZeroTierOne/tags | \
+              jq -r '.[0].name')
+          else
+            TAG="${{ github.event.inputs.tag }}"
           fi
-          echo "ZT_VERSION=$ZT_VERSION" >> $GITHUB_OUTPUT
+          echo "ZT_VERSION=$TAG" >> $GITHUB_OUTPUT
+
+      - name: Download ZeroTierOne source
+        run: |
+          wget https://github.com/zerotier/ZeroTierOne/archive/refs/tags/${{ steps.get_version.outputs.ZT_VERSION }}.tar.gz
+          tar -xzf ${{ steps.get_version.outputs.ZT_VERSION }}.tar.gz
 
       - name: Cross-compile ZeroTierOne in Docker
         run: |
+          DIR="ZeroTierOne-${{ steps.get_version.outputs.ZT_VERSION }}"
           docker run --rm \
             -v $GITHUB_WORKSPACE:/work \
-            -w /work/ZeroTierOne-1.16.0 \
+            -w /work/$DIR \
             rustreleaser/cross:mipsel-unknown-linux-musl \
             bash -c "\
               export ZT_SKIP_RUST=1 && \
@@ -37,21 +43,20 @@ jobs:
               export CXX=mipsel-linux-muslsf-g++ && \
               export AR=mipsel-linux-muslsf-ar && \
               export RANLIB=mipsel-linux-muslsf-ranlib && \
-              make -f make-linux.mk OSTYPE=Linux && \
-              file zerotier-one"
+              make -f make-linux.mk OSTYPE=Linux"
 
       - name: Package binary
         run: |
-          cd ZeroTierOne-1.16.0
+          DIR="ZeroTierOne-${{ steps.get_version.outputs.ZT_VERSION }}"
+          cd $DIR
           mkdir -p release
           cp zerotier-one release/
           cp LICENSE.txt release/
-          tar -czvf ../zerotier-one-mipsle-${{ steps.vars.outputs.ZT_VERSION }}.tar.gz -C release .
+          tar -czvf ../zerotier-one-mipsle-${{ steps.get_version.outputs.ZT_VERSION }}.tar.gz -C release .
 
-      - name: Create Release
+      - name: Upload Release
         uses: softprops/action-gh-release@v2
         with:
-          files: zerotier-one-mipsle-${{ steps.vars.outputs.ZT_VERSION }}.tar.gz
-          name: MIPSLE Build ${{ steps.vars.outputs.ZT_VERSION }}
+          files: zerotier-one-mipsle-${{ steps.get_version.outputs.ZT_VERSION }}.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
