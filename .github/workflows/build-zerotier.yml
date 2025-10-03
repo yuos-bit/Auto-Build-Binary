@@ -23,9 +23,6 @@ jobs:
     runs-on: ubuntu-22.04
     env:
       INSTALL_DIR: ${{ github.workspace }}/sysroot
-      # 全局设置交叉编译器
-      CC: ${{ github.event.inputs.ARCH == 'x86_64' && 'gcc' || github.event.inputs.ARCH == 'aarch64' && 'aarch64-linux-gnu-gcc' || github.event.inputs.ARCH == 'armv7' && 'arm-linux-gnueabihf-gcc' || github.event.inputs.ARCH == 'mipsel' && 'mipsel-linux-gnu-gcc' }}
-      CXX: ${{ github.event.inputs.ARCH == 'x86_64' && 'g++' || github.event.inputs.ARCH == 'aarch64' && 'aarch64-linux-gnu-g++' || github.event.inputs.ARCH == 'armv7' && 'arm-linux-gnueabihf-g++' || github.event.inputs.ARCH == 'mipsel' && 'mipsel-linux-gnu-g++' }}
 
     steps:
       - name: Checkout
@@ -42,9 +39,56 @@ jobs:
             zlib1g-dev libcurl4-openssl-dev nlohmann-json3-dev \
             libncurses5-dev libncursesw5-dev
 
+      - name: Set Compiler
+        run: |
+          case "${{ github.event.inputs.ARCH }}" in
+            x86_64)
+              export CC=gcc
+              export CXX=g++
+              ;;
+            aarch64)
+              export CC=aarch64-linux-gnu-gcc
+              export CXX=aarch64-linux-gnu-g++
+              ;;
+            armv7)
+              export CC=arm-linux-gnueabihf-gcc
+              export CXX=arm-linux-gnueabihf-g++
+              ;;
+            mipsel)
+              export CC=mipsel-linux-gnu-gcc
+              export CXX=mipsel-linux-gnu-g++
+              ;;
+          esac
+          echo "Using compiler: $CC, $CXX"
+          export PATH=$PATH
+          mkdir -p $INSTALL_DIR
+
+      - name: Build zlib (Static)
+        run: |
+          curl -L -o zlib.tar.gz https://zlib.net/zlib-1.2.13.tar.gz
+          tar -xzf zlib.tar.gz
+          cd zlib-1.2.13
+          CC=$CC ./configure --prefix=$INSTALL_DIR --static
+          make -j$(nproc) install
+
+      - name: Build ncurses (Static)
+        run: |
+          curl -L -o ncurses.tar.gz https://ftp.gnu.org/pub/gnu/ncurses/ncurses-6.4.tar.gz
+          tar -xzf ncurses.tar.gz
+          cd ncurses-6.4
+          ./configure \
+            --host=${{ github.event.inputs.ARCH }}-linux-gnu \
+            --prefix=$INSTALL_DIR \
+            --with-shared=no \
+            --with-static=yes \
+            --without-debug \
+            --without-ada \
+            --without-manpages \
+            CC=$CC CXX=$CXX
+          make -j$(nproc) install
+
       - name: Build Prometheus-cpp (Static)
         run: |
-          mkdir -p $INSTALL_DIR
           curl -L -o prometheus-cpp.tar.gz https://github.com/jupp0r/prometheus-cpp/releases/download/v1.3.0/prometheus-cpp-with-submodules.tar.gz
           tar -xzf prometheus-cpp.tar.gz
           cd prometheus-cpp-with-submodules
@@ -55,28 +99,14 @@ jobs:
             -DCMAKE_C_COMPILER=$CC \
             -DCMAKE_CXX_COMPILER=$CXX \
             -DCMAKE_INSTALL_PREFIX=$INSTALL_DIR \
+            -DZLIB_LIBRARY=$INSTALL_DIR/lib/libz.a \
+            -DZLIB_INCLUDE_DIR=$INSTALL_DIR/include \
             -DENABLE_TESTING=OFF \
             -DENABLE_PUSH_PULL_TESTING=OFF \
             -DENABLE_SAMPLE=OFF \
             -DCMAKE_FIND_ROOT_PATH=$INSTALL_DIR \
             -G Ninja
           ninja install
-
-      - name: Build ncurses (Static)
-        run: |
-          curl -L -o ncurses.tar.gz https://ftp.gnu.org/gnu/ncurses/ncurses-6.4.tar.gz
-          tar -xzf ncurses.tar.gz
-          cd ncurses-6.4
-          mkdir build && cd build
-          ../configure \
-            --prefix=$INSTALL_DIR \
-            --with-shared=no \
-            --with-static=yes \
-            --without-debug \
-            --without-ada \
-            --without-manpages \
-            CC=$CC CXX=$CXX
-          make -j$(nproc) install
 
       - name: Build Zerotier
         run: |
