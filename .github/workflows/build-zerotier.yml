@@ -35,7 +35,8 @@ jobs:
           cd prometheus-cpp
           git submodule update --init --recursive
           mkdir _build && cd _build
-          cmake .. -DBUILD_SHARED_LIBS=ON -DENABLE_PUSH=OFF -DENABLE_COMPRESSION=OFF
+          cmake .. -DBUILD_SHARED_LIBS=ON -DENABLE_PUSH=OFF -DENABLE_COMPRESSION=OFF \
+            -DCMAKE_INSTALL_PREFIX=/usr/local
           make -j$(nproc)
           sudo make install
           cd ../../
