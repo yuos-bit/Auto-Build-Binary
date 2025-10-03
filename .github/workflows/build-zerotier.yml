@@ -58,30 +58,34 @@ jobs:
             zlib1g-dev \
             nlohmann-json3-dev
 
-      - name: Configure Compiler
+      - name: Setup compiler and paths
         run: |
-          EXTRA_LDFLAGS=""
           INSTALL_DIR="$HOME/sysroot"
+          EXTRA_LDFLAGS=""
           case "${{ github.event.inputs.ARCH }}" in
             x86_64)
-              export CC=gcc
-              export CXX=g++
+              CC_PATH=$(which gcc)
+              CXX_PATH=$(which g++)
               ;;
             aarch64)
-              export CC=aarch64-linux-gnu-gcc
-              export CXX=aarch64-linux-gnu-g++
+              CC_PATH=$(which aarch64-linux-gnu-gcc)
+              CXX_PATH=$(which aarch64-linux-gnu-g++)
               ;;
             armv7)
-              export CC=arm-linux-gnueabihf-gcc
-              export CXX=arm-linux-gnueabihf-g++
+              CC_PATH=$(which arm-linux-gnueabihf-gcc)
+              CXX_PATH=$(which arm-linux-gnueabihf-g++)
               ;;
             mipsel)
-              export CC=mipsel-linux-gnu-gcc
-              export CXX=mipsel-linux-gnu-g++
+              CC_PATH=$(which mipsel-linux-gnu-gcc)
+              CXX_PATH=$(which mipsel-linux-gnu-g++)
               EXTRA_LDFLAGS="-latomic"
               ;;
           esac
-          echo "Using compiler: $CC, $CXX"
+          echo "Using compiler: $CC_PATH, $CXX_PATH"
+          echo "CC_PATH=$CC_PATH" >> $GITHUB_ENV
+          echo "CXX_PATH=$CXX_PATH" >> $GITHUB_ENV
+          echo "INSTALL_DIR=$INSTALL_DIR" >> $GITHUB_ENV
+          echo "EXTRA_LDFLAGS=$EXTRA_LDFLAGS" >> $GITHUB_ENV
 
       - name: Build prometheus-cpp for target
         run: |
@@ -92,12 +96,13 @@ jobs:
           cmake .. \
             -DCMAKE_BUILD_TYPE=Release \
             -DBUILD_SHARED_LIBS=OFF \
-            -DCMAKE_C_COMPILER=$CC \
-            -DCMAKE_CXX_COMPILER=$CXX \
+            -DCMAKE_C_COMPILER=$CC_PATH \
+            -DCMAKE_CXX_COMPILER=$CXX_PATH \
+            -DCMAKE_SYSTEM_NAME=Linux \
+            -DCMAKE_FIND_ROOT_PATH=$INSTALL_DIR \
             -DCMAKE_INSTALL_PREFIX=$INSTALL_DIR \
             -DZLIB_LIBRARY=/usr/lib/${{ github.event.inputs.ARCH }}-linux-gnu/libz.so \
             -DZLIB_INCLUDE_DIR=/usr/include \
-            -DCMAKE_FIND_ROOT_PATH=$INSTALL_DIR \
             -G Ninja
           ninja -v
           ninja install
@@ -115,8 +120,8 @@ jobs:
           cd build
           cmake ../zerotier \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_C_COMPILER=$CC \
-            -DCMAKE_CXX_COMPILER=$CXX \
+            -DCMAKE_C_COMPILER=$CC_PATH \
+            -DCMAKE_CXX_COMPILER=$CXX_PATH \
             -DCMAKE_CXX_STANDARD=17 \
             -DCMAKE_PREFIX_PATH=$INSTALL_DIR \
             -DCMAKE_EXE_LINKER_FLAGS="$EXTRA_LDFLAGS" \
