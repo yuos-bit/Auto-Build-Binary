@@ -11,6 +11,10 @@ on:
         description: "Target architecture (amd64, arm64, mipsel, mips, armhf)"
         required: true
         default: "amd64"
+      build_selftest:
+        description: "Whether to build zerotier-selftest"
+        required: false
+        default: "false"
 
 jobs:
   build:
@@ -25,6 +29,7 @@ jobs:
           sudo apt-get install -y build-essential cmake git wget curl unzip \
             pkg-config autoconf automake libtool \
             nlohmann-json3-dev libcurl4-openssl-dev libssl-dev zlib1g-dev \
+            clang clang++ \
             gcc-mipsel-linux-gnu g++-mipsel-linux-gnu \
             gcc-mips-linux-gnu g++-mips-linux-gnu \
             gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
@@ -52,7 +57,7 @@ jobs:
           cd zerotier-src
           mkdir build && cd build
 
-          # 指定 CMake 查找路径，确保找到 prometheus-cpp
+          # Ensure CMake finds prometheus-cpp
           export CMAKE_PREFIX_PATH=/usr/local
           export CXXFLAGS="-I/usr/local/include"
           export LDFLAGS="-L/usr/local/lib"
@@ -88,6 +93,11 @@ jobs:
           esac
 
           make -j$(nproc)
+
+          if [ "${{ github.event.inputs.build_selftest }}" == "true" ]; then
+            make zerotier-selftest
+          fi
+
           cd ..
           tar czf ../zerotier-${{ github.event.inputs.zerotier_version }}-${{ github.event.inputs.target_arch }}.tar.gz build/zerotier*
 
@@ -99,7 +109,7 @@ jobs:
 
   release:
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - name: Download artifact
         uses: actions/download-artifact@v4
