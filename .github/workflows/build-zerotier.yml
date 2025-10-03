@@ -66,44 +66,62 @@ jobs:
             x86_64)
               export CC=gcc
               export CXX=g++
-              CC_PATH=$(which gcc)
-              CXX_PATH=$(which g++)
               ;;
             aarch64)
               export CC=aarch64-linux-gnu-gcc
               export CXX=aarch64-linux-gnu-g++
-              CC_PATH=$(which aarch64-linux-gnu-gcc)
-              CXX_PATH=$(which aarch64-linux-gnu-g++)
               ;;
             armv7)
               export CC=arm-linux-gnueabihf-gcc
               export CXX=arm-linux-gnueabihf-g++
-              CC_PATH=$(which arm-linux-gnueabihf-gcc)
-              CXX_PATH=$(which arm-linux-gnueabihf-g++)
               ;;
             mipsel)
               export CC=mipsel-linux-gnu-gcc
               export CXX=mipsel-linux-gnu-g++
               EXTRA_LDFLAGS="-latomic"
-              CC_PATH=$(which mipsel-linux-gnu-gcc)
-              CXX_PATH=$(which mipsel-linux-gnu-g++)
               ;;
           esac
-          echo "Using compiler: $CC_PATH, $CXX_PATH"
+          echo "Using compiler: $CC, $CXX"
 
       - name: Build prometheus-cpp for target
         run: |
+          INSTALL_DIR="$HOME/sysroot"
           curl -L -o prometheus-cpp.tar.gz https://github.com/jupp0r/prometheus-cpp/releases/download/v1.3.0/prometheus-cpp-with-submodules.tar.gz
           tar -xvf prometheus-cpp.tar.gz
           cd prometheus-cpp-with-submodules
           mkdir build && cd build
+
+          # 创建交叉编译 toolchain 文件
+          TOOLCHAIN_FILE=$(pwd)/toolchain.cmake
+          case "${{ github.event.inputs.ARCH }}" in
+            x86_64)
+              echo "set(CMAKE_SYSTEM_NAME Linux)" > $TOOLCHAIN_FILE
+              echo "set(CMAKE_C_COMPILER gcc)" >> $TOOLCHAIN_FILE
+              echo "set(CMAKE_CXX_COMPILER g++)" >> $TOOLCHAIN_FILE
+              ;;
+            aarch64)
+              echo "set(CMAKE_SYSTEM_NAME Linux)" > $TOOLCHAIN_FILE
+              echo "set(CMAKE_C_COMPILER aarch64-linux-gnu-gcc)" >> $TOOLCHAIN_FILE
+              echo "set(CMAKE_CXX_COMPILER aarch64-linux-gnu-g++)" >> $TOOLCHAIN_FILE
+              ;;
+            armv7)
+              echo "set(CMAKE_SYSTEM_NAME Linux)" > $TOOLCHAIN_FILE
+              echo "set(CMAKE_C_COMPILER arm-linux-gnueabihf-gcc)" >> $TOOLCHAIN_FILE
+              echo "set(CMAKE_CXX_COMPILER arm-linux-gnueabihf-g++)" >> $TOOLCHAIN_FILE
+              ;;
+            mipsel)
+              echo "set(CMAKE_SYSTEM_NAME Linux)" > $TOOLCHAIN_FILE
+              echo "set(CMAKE_C_COMPILER mipsel-linux-gnu-gcc)" >> $TOOLCHAIN_FILE
+              echo "set(CMAKE_CXX_COMPILER mipsel-linux-gnu-g++)" >> $TOOLCHAIN_FILE
+              echo "set(CMAKE_FIND_ROOT_PATH $INSTALL_DIR)" >> $TOOLCHAIN_FILE
+              echo "set(CMAKE_EXE_LINKER_FLAGS \"-latomic\")" >> $TOOLCHAIN_FILE
+              ;;
+          esac
+
           cmake .. \
+            -DCMAKE_TOOLCHAIN_FILE=$TOOLCHAIN_FILE \
             -DCMAKE_BUILD_TYPE=Release \
             -DBUILD_SHARED_LIBS=OFF \
-            -DCMAKE_C_COMPILER=$CC_PATH \
-            -DCMAKE_CXX_COMPILER=$CXX_PATH \
-            -DCMAKE_SYSTEM_NAME=Linux \
-            -DCMAKE_FIND_ROOT_PATH=$INSTALL_DIR \
             -DCMAKE_INSTALL_PREFIX=$INSTALL_DIR \
             -DZLIB_LIBRARY=/usr/lib/${{ github.event.inputs.ARCH }}-linux-gnu/libz.so \
             -DZLIB_INCLUDE_DIR=/usr/include \
@@ -111,6 +129,7 @@ jobs:
             -DENABLE_PUSH_PULL_TESTING=OFF \
             -DENABLE_SAMPLE=OFF \
             -G Ninja
+
           ninja -v
           ninja install
 
@@ -123,17 +142,44 @@ jobs:
 
       - name: Build Zerotier
         run: |
-          mkdir -p build
-          cd build
+          INSTALL_DIR="$HOME/sysroot"
+          mkdir -p build && cd build
+
+          # 创建 Zerotier 的交叉编译 toolchain
+          TOOLCHAIN_FILE=$(pwd)/zerotier_toolchain.cmake
+          case "${{ github.event.inputs.ARCH }}" in
+            x86_64)
+              echo "set(CMAKE_SYSTEM_NAME Linux)" > $TOOLCHAIN_FILE
+              echo "set(CMAKE_C_COMPILER gcc)" >> $TOOLCHAIN_FILE
+              echo "set(CMAKE_CXX_COMPILER g++)" >> $TOOLCHAIN_FILE
+              ;;
+            aarch64)
+              echo "set(CMAKE_SYSTEM_NAME Linux)" > $TOOLCHAIN_FILE
+              echo "set(CMAKE_C_COMPILER aarch64-linux-gnu-gcc)" >> $TOOLCHAIN_FILE
+              echo "set(CMAKE_CXX_COMPILER aarch64-linux-gnu-g++)" >> $TOOLCHAIN_FILE
+              ;;
+            armv7)
+              echo "set(CMAKE_SYSTEM_NAME Linux)" > $TOOLCHAIN_FILE
+              echo "set(CMAKE_C_COMPILER arm-linux-gnueabihf-gcc)" >> $TOOLCHAIN_FILE
+              echo "set(CMAKE_CXX_COMPILER arm-linux-gnueabihf-g++)" >> $TOOLCHAIN_FILE
+              ;;
+            mipsel)
+              echo "set(CMAKE_SYSTEM_NAME Linux)" > $TOOLCHAIN_FILE
+              echo "set(CMAKE_C_COMPILER mipsel-linux-gnu-gcc)" >> $TOOLCHAIN_FILE
+              echo "set(CMAKE_CXX_COMPILER mipsel-linux-gnu-g++)" >> $TOOLCHAIN_FILE
+              echo "set(CMAKE_FIND_ROOT_PATH $INSTALL_DIR)" >> $TOOLCHAIN_FILE
+              echo "set(CMAKE_EXE_LINKER_FLAGS \"-latomic\")" >> $TOOLCHAIN_FILE
+              ;;
+          esac
+
           cmake ../zerotier \
+            -DCMAKE_TOOLCHAIN_FILE=$TOOLCHAIN_FILE \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_C_COMPILER=$CC_PATH \
-            -DCMAKE_CXX_COMPILER=$CXX_PATH \
             -DCMAKE_CXX_STANDARD=17 \
             -DCMAKE_PREFIX_PATH=$INSTALL_DIR \
             -DCMAKE_EXE_LINKER_FLAGS="$EXTRA_LDFLAGS" \
-            -DCMAKE_FIND_ROOT_PATH=$INSTALL_DIR \
             -G Ninja
+
           ninja -v
 
       - name: Package Artifact
