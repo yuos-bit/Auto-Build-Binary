@@ -53,7 +53,9 @@ jobs:
             qemu-user-static \
             crossbuild-essential-arm64 \
             crossbuild-essential-armhf \
-            crossbuild-essential-mipsel
+            crossbuild-essential-mipsel \
+            nlohmann-json3-dev \
+            libprometheus-cpp-dev
 
       - name: Download Source
         run: |
