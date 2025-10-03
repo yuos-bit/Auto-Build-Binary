@@ -1,4 +1,4 @@
-name: Build ZeroTier Binary
+name: Build ZeroTier Binary with Clang
 
 on:
   workflow_dispatch:
@@ -8,13 +8,13 @@ on:
         required: true
         default: "1.14.0"
       target_arch:
-        description: "Target architecture (amd64, arm64, mipsel, mips, armhf)"
+        description: "Target architecture (amd64, arm64, armhf, mipsel, mips)"
         required: true
         default: "amd64"
       build_selftest:
         description: "Whether to build zerotier-selftest"
         required: false
-        default: "false"
+        default: "true"
 
 jobs:
   build:
@@ -23,19 +23,18 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Set up build environment and install prometheus-cpp
+      - name: Install Clang and dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential cmake git wget curl unzip \
-            pkg-config autoconf automake libtool \
-            nlohmann-json3-dev libcurl4-openssl-dev libssl-dev zlib1g-dev \
-            clang clang++ \
-            gcc-mipsel-linux-gnu g++-mipsel-linux-gnu \
-            gcc-mips-linux-gnu g++-mips-linux-gnu \
-            gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
-            gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf
+          sudo apt-get install -y clang-15 clang-tools-15 clang-tidy-15 \
+            build-essential cmake git wget unzip pkg-config autoconf automake libtool \
+            nlohmann-json3-dev libcurl4-openssl-dev libssl-dev zlib1g-dev
 
-          # Build and install prometheus-cpp
+          # Set clang-15 as default
+          sudo update-alternatives --install /usr/bin/cc cc /usr/bin/clang-15 100
+          sudo update-alternatives --install /usr/bin/c++ c++ /usr/bin/clang++-15 100
+
+          # Build prometheus-cpp
           git clone --branch v1.1.0 https://github.com/jupp0r/prometheus-cpp.git
           cd prometheus-cpp
           git submodule update --init --recursive
@@ -52,43 +51,54 @@ jobs:
           tar -xzf ${{ github.event.inputs.zerotier_version }}.tar.gz
           mv ZeroTierOne-${{ github.event.inputs.zerotier_version }} zerotier-src
 
-      - name: Build ZeroTier
+      - name: Build ZeroTier with Clang
         run: |
           cd zerotier-src
           mkdir build && cd build
 
-          # Ensure CMake finds prometheus-cpp
           export CMAKE_PREFIX_PATH=/usr/local
           export CXXFLAGS="-I/usr/local/include"
           export LDFLAGS="-L/usr/local/lib"
 
           case "${{ github.event.inputs.target_arch }}" in
             amd64)
-              cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=$CMAKE_PREFIX_PATH
+              cmake .. -DCMAKE_BUILD_TYPE=Release
               ;;
             arm64)
               cmake .. -DCMAKE_BUILD_TYPE=Release \
-                -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
-                -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ \
-                -DCMAKE_PREFIX_PATH=$CMAKE_PREFIX_PATH
+                -DCMAKE_C_COMPILER=clang \
+                -DCMAKE_CXX_COMPILER=clang++ \
+                -DCMAKE_SYSTEM_NAME=Linux \
+                -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
+                -DCMAKE_FIND_ROOT_PATH=/usr/aarch64-linux-gnu
               ;;
             armhf)
               cmake .. -DCMAKE_BUILD_TYPE=Release \
-                -DCMAKE_C_COMPILER=arm-linux-gnueabihf-gcc \
-                -DCMAKE_CXX_COMPILER=arm-linux-gnueabihf-g++ \
-                -DCMAKE_PREFIX_PATH=$CMAKE_PREFIX_PATH
+                -DCMAKE_C_COMPILER=clang \
+                -DCMAKE_CXX_COMPILER=clang++ \
+                -DCMAKE_SYSTEM_NAME=Linux \
+                -DCMAKE_SYSTEM_PROCESSOR=arm \
+                -DCMAKE_FIND_ROOT_PATH=/usr/arm-linux-gnueabihf
               ;;
             mipsel)
               cmake .. -DCMAKE_BUILD_TYPE=Release \
-                -DCMAKE_C_COMPILER=mipsel-linux-gnu-gcc \
-                -DCMAKE_CXX_COMPILER=mipsel-linux-gnu-g++ \
-                -DCMAKE_PREFIX_PATH=$CMAKE_PREFIX_PATH
+                -DCMAKE_C_COMPILER=clang \
+                -DCMAKE_CXX_COMPILER=clang++ \
+                -DCMAKE_SYSTEM_NAME=Linux \
+                -DCMAKE_SYSTEM_PROCESSOR=mipsel \
+                -DCMAKE_FIND_ROOT_PATH=/usr/mipsel-linux-gnu
               ;;
             mips)
               cmake .. -DCMAKE_BUILD_TYPE=Release \
-                -DCMAKE_C_COMPILER=mips-linux-gnu-gcc \
-                -DCMAKE_CXX_COMPILER=mips-linux-gnu-g++ \
-                -DCMAKE_PREFIX_PATH=$CMAKE_PREFIX_PATH
+                -DCMAKE_C_COMPILER=clang \
+                -DCMAKE_CXX_COMPILER=clang++ \
+                -DCMAKE_SYSTEM_NAME=Linux \
+                -DCMAKE_SYSTEM_PROCESSOR=mips \
+                -DCMAKE_FIND_ROOT_PATH=/usr/mips-linux-gnu
+              ;;
+            *)
+              echo "Unsupported architecture"
+              exit 1
               ;;
           esac
 
