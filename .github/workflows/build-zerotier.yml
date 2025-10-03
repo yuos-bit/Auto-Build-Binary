@@ -1,151 +1,73 @@
-name: Build ZeroTier for Multiple Architectures
+name: Build ZeroTierOne for MIPSLE
 
 on:
   push:
     tags:
-      - 'v*'  # 当推送类似v1.2.3的标签时触发
+      - 'v*'  # 仅在推送标签时触发，如 v1.16.0
   workflow_dispatch:  # 允许手动触发
-    inputs:
-      zt_version:
-        description: 'ZeroTier One版本号 (例如: 1.16.0)'
-        required: true
-        default: '1.16.0'
 
 jobs:
-  build:
-    name: Build for ${{ matrix.arch }}
+  build-mipsle:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: amd64
-            docker_image: ubuntu:20.04
-            cross_prefix: ""
-            target: x86_64-linux-gnu
-            rust_target: x86_64-unknown-linux-gnu
-            qemu_arch: x86_64
-          - arch: arm64
-            docker_image: ubuntu:20.04
-            cross_prefix: aarch64-linux-gnu-
-            target: aarch64-linux-gnu
-            rust_target: aarch64-unknown-linux-gnu
-            qemu_arch: aarch64
-          - arch: armhf
-            docker_image: ubuntu:20.04
-            cross_prefix: arm-linux-gnueabihf-
-            target: arm-linux-gnueabihf
-            rust_target: armv7-unknown-linux-gnueabihf
-            qemu_arch: arm
-          - arch: mipsel
-            docker_image: ubuntu:20.04
-            cross_prefix: mipsel-linux-gnu-
-            target: mipsel-linux-gnu
-            rust_target: mipsel-unknown-linux-gnu
-            qemu_arch: mipsel
-          - arch: mips
-            docker_image: ubuntu:20.04
-            cross_prefix: mips-linux-gnu-
-            target: mips-linux-gnu
-            rust_target: mips-unknown-linux-gnu
-            qemu_arch: mips
-
     steps:
-      - name: Checkout specific version
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up cross-compilation environment
         run: |
-          VERSION=${{ github.event.inputs.zt_version || github.ref_name }}
-          VERSION=${VERSION#v}
-          git clone --depth 1 --branch $VERSION https://github.com/zerotier/ZeroTierOne.git .
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Install QEMU for multi-architecture support
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: all
-
-      - name: Build and extract ZeroTier binaries
-        run: |
-          VERSION=${{ github.event.inputs.zt_version || github.ref_name }}
-          VERSION=${VERSION#v}
-          mkdir -p build-output/${{ matrix.arch }}
-          
-          # 使用buildx进行跨架构编译
-          docker buildx build --rm --platform linux/${{ matrix.qemu_arch }} \
-            -t zt-builder:${{ matrix.arch }} \
-            -f - . <<EOF
-          FROM ${{ matrix.docker_image }}
-          RUN apt-get update && apt-get install -y \
-            build-essential \
-            git \
+          sudo apt-get update
+          sudo apt-get install -y \
+            gcc-mipsel-linux-gnu \
+            g++-mipsel-linux-gnu \
             make \
-            gcc \
-            g++ \
-            libc6-dev \
-            libssl-dev \
-            pkg-config \
-            curl \
-            binutils \
-            ${{ matrix.cross_prefix }}gcc \
-            ${{ matrix.cross_prefix }}g++ \
-            ${{ matrix.cross_prefix }}libc6-dev \
-            ${{ matrix.cross_prefix }}openssl \
-            ${{ matrix.cross_prefix }}pkg-config
-          RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-          ENV PATH="/root/.cargo/bin:${PATH}"
-          RUN rustup target add ${{ matrix.rust_target }}
-          WORKDIR /workspace
-          EOF
-          
-          # 运行编译容器
-          docker run --rm -v $PWD:/workspace -w /workspace zt-builder:${{ matrix.arch }} /bin/bash -c "
-            make CC=${{ matrix.cross_prefix }}gcc CXX=${{ matrix.cross_prefix }}g++
-            make selftest
-            ./zerotier-selftest
-            cp zerotier-one /workspace/build-output/${{ matrix.arch }}/
-            cp zerotier-cli /workspace/build-output/${{ matrix.arch }}/
-            cp zerotier-idtool /workspace/build-output/${{ matrix.arch }}/
-          "
+            git \
+            rustc \
+            cargo \
+            libssl-dev
 
-      - name: Create tarball
+          # 安装 MIPSLE 目标的 Rust 工具链
+          rustup target add mipsel-unknown-linux-gnu
+
+      - name: Prepare build variables
+        id: vars
         run: |
-          VERSION=${{ github.event.inputs.zt_version || github.ref_name }}
-          VERSION=${VERSION#v}
-          cd build-output/${{ matrix.arch }}
-          tar -czf ../../zerotier-${VERSION}-linux-${{ matrix.arch }}.tar.gz *
-          cd ../..
+          echo "ZT_VERSION=$(git describe --abbrev=0 --tags)" >> $GITHUB_OUTPUT
+          echo "ZT_COMMIT=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
 
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: zerotier-${{ matrix.arch }}
-          path: zerotier-*.tar.gz
-          retention-days: 7
+      - name: Cross-compile ZeroTierOne
+        env:
+          CC: mipsel-linux-gnu-gcc
+          CXX: mipsel-linux-gnu-g++
+          RUST_TARGET: mipsel-unknown-linux-gnu
+          # 针对 MIPSLE 架构的特定编译选项
+          CFLAGS: "-mips32 -EL -msoft-float"
+          CXXFLAGS: "-mips32 -EL -msoft-float"
+        run: |
+          # 构建主程序
+          make
 
-  release:
-    name: Create Release
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-          
-      - name: Display structure of downloaded files
-        run: ls -R artifacts
+          # 构建自测试程序（可选）
+          make selftest
 
-      - name: Create Release
+          # 验证二进制文件架构
+          file zerotier-one
+
+      - name: Package binary
+        run: |
+          mkdir -p release
+          cp zerotier-one release/
+          cp zerotier-selftest release/  # 可选
+          cp LICENSE.txt release/
+          tar -czvf zerotier-one-mipsle-${{ steps.vars.outputs.ZT_VERSION }}.tar.gz -C release .
+
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            artifacts/zerotier-amd64/zerotier-*.tar.gz
-            artifacts/zerotier-arm64/zerotier-*.tar.gz
-            artifacts/zerotier-armhf/zerotier-*.tar.gz
-            artifacts/zerotier-mipsel/zerotier-*.tar.gz
-            artifacts/zerotier-mips/zerotier-*.tar.gz
-          draft: false
-          prerelease: false
+          files: zerotier-one-mipsle-${{ steps.vars.outputs.ZT_VERSION }}.tar.gz
+          name: Release ${{ steps.vars.outputs.ZT_VERSION }} (MIPSLE)
+          body: |
+            ZeroTierOne binary for MIPSLE architecture.
+            - Commit: ${{ steps.vars.outputs.ZT_COMMIT }}
+            - Built from tag: ${{ steps.vars.outputs.ZT_VERSION }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
