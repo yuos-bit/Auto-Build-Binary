@@ -58,34 +58,38 @@ jobs:
             zlib1g-dev \
             nlohmann-json3-dev
 
-      - name: Setup compiler and paths
+      - name: Configure Compiler
         run: |
-          INSTALL_DIR="$HOME/sysroot"
           EXTRA_LDFLAGS=""
+          INSTALL_DIR="$HOME/sysroot"
           case "${{ github.event.inputs.ARCH }}" in
             x86_64)
+              export CC=gcc
+              export CXX=g++
               CC_PATH=$(which gcc)
               CXX_PATH=$(which g++)
               ;;
             aarch64)
+              export CC=aarch64-linux-gnu-gcc
+              export CXX=aarch64-linux-gnu-g++
               CC_PATH=$(which aarch64-linux-gnu-gcc)
               CXX_PATH=$(which aarch64-linux-gnu-g++)
               ;;
             armv7)
+              export CC=arm-linux-gnueabihf-gcc
+              export CXX=arm-linux-gnueabihf-g++
               CC_PATH=$(which arm-linux-gnueabihf-gcc)
               CXX_PATH=$(which arm-linux-gnueabihf-g++)
               ;;
             mipsel)
+              export CC=mipsel-linux-gnu-gcc
+              export CXX=mipsel-linux-gnu-g++
+              EXTRA_LDFLAGS="-latomic"
               CC_PATH=$(which mipsel-linux-gnu-gcc)
               CXX_PATH=$(which mipsel-linux-gnu-g++)
-              EXTRA_LDFLAGS="-latomic"
               ;;
           esac
           echo "Using compiler: $CC_PATH, $CXX_PATH"
-          echo "CC_PATH=$CC_PATH" >> $GITHUB_ENV
-          echo "CXX_PATH=$CXX_PATH" >> $GITHUB_ENV
-          echo "INSTALL_DIR=$INSTALL_DIR" >> $GITHUB_ENV
-          echo "EXTRA_LDFLAGS=$EXTRA_LDFLAGS" >> $GITHUB_ENV
 
       - name: Build prometheus-cpp for target
         run: |
@@ -103,6 +107,9 @@ jobs:
             -DCMAKE_INSTALL_PREFIX=$INSTALL_DIR \
             -DZLIB_LIBRARY=/usr/lib/${{ github.event.inputs.ARCH }}-linux-gnu/libz.so \
             -DZLIB_INCLUDE_DIR=/usr/include \
+            -DENABLE_TESTING=OFF \
+            -DENABLE_PUSH_PULL_TESTING=OFF \
+            -DENABLE_SAMPLE=OFF \
             -G Ninja
           ninja -v
           ninja install
