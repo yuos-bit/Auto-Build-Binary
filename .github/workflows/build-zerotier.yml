@@ -24,37 +24,47 @@ jobs:
             cross_prefix: ""
             target: x86_64-linux-gnu
             rust_target: x86_64-unknown-linux-gnu
+            qemu_arch: x86_64
           - arch: arm64
-            docker_image: multiarch/ubuntu-core:arm64-focal
+            docker_image: arm64v8/ubuntu:20.04
             cross_prefix: aarch64-linux-gnu-
             target: aarch64-linux-gnu
             rust_target: aarch64-unknown-linux-gnu
+            qemu_arch: aarch64
           - arch: armhf
-            docker_image: multiarch/ubuntu-core:armhf-focal
+            docker_image: arm32v7/ubuntu:20.04
             cross_prefix: arm-linux-gnueabihf-
             target: arm-linux-gnueabihf
             rust_target: armv7-unknown-linux-gnueabihf
+            qemu_arch: arm
           - arch: mipsel
-            docker_image: multiarch/ubuntu-core:mipsel-focal
+            docker_image: arm64v8/ubuntu:20.04
             cross_prefix: mipsel-linux-gnu-
             target: mipsel-linux-gnu
             rust_target: mipsel-unknown-linux-gnu
+            qemu_arch: mipsel
           - arch: mips
-            docker_image: multiarch/ubuntu-core:mips-focal
+            docker_image: arm64v8/ubuntu:20.04
             cross_prefix: mips-linux-gnu-
             target: mips-linux-gnu
             rust_target: mips-unknown-linux-gnu
+            qemu_arch: mips
 
     steps:
       - name: Checkout specific version
         run: |
           VERSION=${{ github.event.inputs.zt_version || github.ref_name }}
-          # 移除可能的v前缀
           VERSION=${VERSION#v}
           git clone --depth 1 --branch $VERSION https://github.com/zerotier/ZeroTierOne.git .
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+
+      - name: Install QEMU for multi-architecture support
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-user-static binfmt-support
+          docker run --rm --privileged tonistiigi/binfmt --install all
 
       - name: Build and extract ZeroTier binaries
         run: |
@@ -62,7 +72,13 @@ jobs:
           VERSION=${VERSION#v}
           mkdir -p build-output/${{ matrix.arch }}
           
+          # 复制qemu静态二进制文件到当前目录（用于容器内执行）
+          if [ "${{ matrix.qemu_arch }}" != "x86_64" ]; then
+            sudo cp /usr/bin/qemu-${{ matrix.qemu_arch }}-static .
+          fi
+          
           docker run --rm -v $PWD:/workspace -w /workspace ${{ matrix.docker_image }} /bin/bash -c "
+            # 安装依赖
             apt-get update && apt-get install -y \
               build-essential \
               git \
@@ -80,16 +96,19 @@ jobs:
               ${{ matrix.cross_prefix }}openssl \
               ${{ matrix.cross_prefix }}pkg-config
             
+            # 安装Rust
             curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
             source \$HOME/.cargo/env
             rustup target add ${{ matrix.rust_target }}
             
+            # 编译ZeroTier
             make CC=${{ matrix.cross_prefix }}gcc CXX=${{ matrix.cross_prefix }}g++
             
             # 运行自测试
             make selftest
             ./zerotier-selftest
             
+            # 复制编译产物
             cp zerotier-one /workspace/build-output/${{ matrix.arch }}/
             cp zerotier-cli /workspace/build-output/${{ matrix.arch }}/
             cp zerotier-idtool /workspace/build-output/${{ matrix.arch }}/
