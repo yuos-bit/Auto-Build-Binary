@@ -32,54 +32,46 @@ on:
 jobs:
   build:
     name: Build ZeroTierOne Binary
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
 
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Set up directories
+      - name: Install cross toolchain
         run: |
-          mkdir -p build
-          DIR=$PWD/ZeroTierOne-${{ github.event.inputs.ZT_VERSION }}
+          sudo apt-get update
+          if [ "${{ github.event.inputs.ARCH }}" = "mipsel" ]; then
+            sudo apt-get install -y gcc-mipsel-linux-gnu g++-mipsel-linux-gnu
+            echo "TOOLCHAIN_PREFIX=mipsel-linux-gnu" >> $GITHUB_ENV
+          elif [ "${{ github.event.inputs.ARCH }}" = "arm" ]; then
+            sudo apt-get install -y gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf
+            echo "TOOLCHAIN_PREFIX=arm-linux-gnueabihf" >> $GITHUB_ENV
+          elif [ "${{ github.event.inputs.ARCH }}" = "x86_64" ]; then
+            sudo apt-get install -y gcc-x86-64-linux-gnu g++-x86-64-linux-gnu
+            echo "TOOLCHAIN_PREFIX=x86_64-linux-gnu" >> $GITHUB_ENV
+          else
+            echo "Unsupported ARCH"
+            exit 1
+          fi
 
       - name: Download ZeroTier source
         run: |
           curl -LO https://github.com/zerotier/ZeroTierOne/archive/refs/tags/${{ github.event.inputs.ZT_VERSION }}.tar.gz
           tar -xzf ${{ github.event.inputs.ZT_VERSION }}.tar.gz
 
-      - name: Build ZeroTier using Docker
+      - name: Build ZeroTier
         run: |
           DIR=$PWD/ZeroTierOne-${{ github.event.inputs.ZT_VERSION }}
-          docker run --rm \
-            -v $DIR:/work:rw \
-            -w /work \
-            rustreleaser/cross:${{ github.event.inputs.ARCH }}-unknown-linux-musl \
-            bash -c "
-              export ZT_SKIP_RUST=1
+          cd $DIR
+          export CC=${TOOLCHAIN_PREFIX}-gcc
+          export CXX=${TOOLCHAIN_PREFIX}-g++
+          export AR=${TOOLCHAIN_PREFIX}-ar
+          export RANLIB=${TOOLCHAIN_PREFIX}-ranlib
+          export CFLAGS="-O2 -fno-strict-aliasing"
+          export CXXFLAGS="-O2 -fno-strict-aliasing -std=c++17"
 
-              # 根据架构选择工具链前缀
-              if [ '${{ github.event.inputs.ARCH }}' = 'mipsel' ]; then
-                  TOOLCHAIN_PREFIX='mipsel-linux-muslsf'
-              elif [ '${{ github.event.inputs.ARCH }}' = 'arm' ]; then
-                  TOOLCHAIN_PREFIX='arm-linux-musleabihf'
-              elif [ '${{ github.event.inputs.ARCH }}' = 'x86_64' ]; then
-                  TOOLCHAIN_PREFIX='x86_64-linux-musl'
-              else
-                  echo 'Unsupported ARCH'
-                  exit 1
-              fi
-
-              export CC=\${TOOLCHAIN_PREFIX}-gcc
-              export CXX=\${TOOLCHAIN_PREFIX}-g++
-              export AR=\${TOOLCHAIN_PREFIX}-ar
-              export RANLIB=\${TOOLCHAIN_PREFIX}-ranlib
-
-              export CFLAGS='-O2 -fno-strict-aliasing'
-              export CXXFLAGS='-O2 -fno-strict-aliasing'
-
-              make OSTYPE=Linux
-            "
+          make OSTYPE=Linux
 
       - name: Package binary
         run: |
