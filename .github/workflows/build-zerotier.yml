@@ -57,25 +57,10 @@ jobs:
             crossbuild-essential-mipsel \
             nlohmann-json3-dev
 
-      - name: Build prometheus-cpp from source
-        run: |
-          curl -L -o prometheus-cpp.tar.gz https://github.com/jupp0r/prometheus-cpp/releases/download/v1.3.0/prometheus-cpp-with-submodules.tar.gz
-          tar -xvf prometheus-cpp.tar.gz
-          cd prometheus-cpp-with-submodules
-          mkdir build && cd build
-          cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -G Ninja
-          sudo ninja install
-
-      - name: Download Zerotier Source
-        run: |
-          curl -L -o zerotier-${{ github.event.inputs.VERSION }}.tar.gz \
-            https://github.com/zerotier/ZeroTierOne/archive/refs/tags/${{ github.event.inputs.VERSION }}.tar.gz
-          tar -xzf zerotier-${{ github.event.inputs.VERSION }}.tar.gz
-          mv ZeroTierOne-${{ github.event.inputs.VERSION }} zerotier
-
       - name: Configure Compiler
         run: |
           EXTRA_LDFLAGS=""
+          INSTALL_DIR="$HOME/sysroot"
           case "${{ github.event.inputs.ARCH }}" in
             x86_64)
               export CC=gcc
@@ -95,8 +80,33 @@ jobs:
               EXTRA_LDFLAGS="-latomic"
               ;;
           esac
-
           echo "Using compiler: $CC, $CXX"
+
+      - name: Build prometheus-cpp for target
+        run: |
+          curl -L -o prometheus-cpp.tar.gz https://github.com/jupp0r/prometheus-cpp/releases/download/v1.3.0/prometheus-cpp-with-submodules.tar.gz
+          tar -xvf prometheus-cpp.tar.gz
+          cd prometheus-cpp-with-submodules
+          mkdir build && cd build
+          cmake .. \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DCMAKE_C_COMPILER=$CC \
+            -DCMAKE_CXX_COMPILER=$CXX \
+            -DCMAKE_INSTALL_PREFIX=$INSTALL_DIR \
+            -G Ninja
+          ninja -v
+          ninja install
+
+      - name: Download Zerotier Source
+        run: |
+          curl -L -o zerotier-${{ github.event.inputs.VERSION }}.tar.gz \
+            https://github.com/zerotier/ZeroTierOne/archive/refs/tags/${{ github.event.inputs.VERSION }}.tar.gz
+          tar -xzf zerotier-${{ github.event.inputs.VERSION }}.tar.gz
+          mv ZeroTierOne-${{ github.event.inputs.VERSION }} zerotier
+
+      - name: Build Zerotier
+        run: |
           mkdir -p build
           cd build
           cmake ../zerotier \
@@ -104,12 +114,9 @@ jobs:
             -DCMAKE_C_COMPILER=$CC \
             -DCMAKE_CXX_COMPILER=$CXX \
             -DCMAKE_CXX_STANDARD=17 \
+            -DCMAKE_PREFIX_PATH=$INSTALL_DIR \
             -DCMAKE_EXE_LINKER_FLAGS="$EXTRA_LDFLAGS" \
             -G Ninja
-
-      - name: Build Zerotier
-        run: |
-          cd build
           ninja -v
 
       - name: Package Artifact
