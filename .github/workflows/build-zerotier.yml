@@ -1,125 +1,94 @@
-name: Build Zerotier Binary (Matrix + Single Release)
+name: Build ZeroTier Binary
 
 on:
   workflow_dispatch:
-
-env:
-  TZ: Asia/Shanghai
-  REPO_URL: https://github.com/zerotier/ZeroTierOne.git
-  BUILD_DIR: /opt/zerotier
-  OUT_DIR: /opt/output
-  TOOLCHAIN_DIR: /opt/toolchain
+    inputs:
+      zerotier_version:
+        description: "ZeroTier version (e.g. 1.14.0)"
+        required: true
+        default: "1.14.0"
+      target_arch:
+        description: "Target architecture (amd64, arm64, mipsel, mips, armhf)"
+        required: true
+        default: "amd64"
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
-    strategy:
-      matrix:
-        arch: [mipsel, mips, arm, aarch64, x86_64]
-
+    runs-on: ubuntu-latest
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+      - name: Checkout repo
+        uses: actions/checkout@v4
 
-    - name: Install dependencies
-      run: |
-        sudo apt update
-        sudo apt install -y build-essential cmake git wget curl unzip \
-          g++-multilib gcc-multilib pkg-config
+      - name: Set up build environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential git cmake pkg-config \
+            gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
+            gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf \
+            gcc-mipsel-linux-gnu g++-mipsel-linux-gnu \
+            gcc-mips-linux-gnu g++-mips-linux-gnu
 
-    - name: Cache mipsel toolchain
-      if: matrix.arch == 'mipsel'
-      uses: actions/cache@v4
-      id: cache-toolchain
-      with:
-        path: ${{ env.TOOLCHAIN_DIR }}
-        key: mipsel-toolchain-${{ github.run_id }}
+      - name: Download ZeroTier source
+        run: |
+          wget https://github.com/zerotier/ZeroTierOne/archive/refs/tags/${{ github.event.inputs.zerotier_version }}.tar.gz
+          tar -xzf ${{ github.event.inputs.zerotier_version }}.tar.gz
+          mv ZeroTierOne-${{ github.event.inputs.zerotier_version }} zerotier-src
 
-    - name: Download cross toolchain if not cached
-      if: matrix.arch == 'mipsel' && steps.cache-toolchain.outputs.cache-hit != 'true'
-      run: |
-        mkdir -p $TOOLCHAIN_DIR
-        echo "Downloading mipsel musl cross toolchain..."
-        curl -L -o $TOOLCHAIN_DIR/mipsel-linux-muslsf-cross.tgz \
-          https://github.com/yuos-bit/Auto-Build-Binary/releases/download/Toolchain/mipsel-linux-muslsf-cross.tgz
-        tar -xzf $TOOLCHAIN_DIR/mipsel-linux-muslsf-cross.tgz -C $TOOLCHAIN_DIR
-        # 设置正确的 bin 路径
-        echo "$TOOLCHAIN_DIR/mipsel-linux-muslsf-cross/mipsel-linux-muslsf/bin" >> $GITHUB_PATH
-        export PATH="$TOOLCHAIN_DIR/mipsel-linux-muslsf-cross/mipsel-linux-muslsf/bin:$PATH"
-        which mipsel-linux-musl-gcc
+      - name: Build ZeroTier
+        run: |
+          cd zerotier-src
+          mkdir build && cd build
+          
+          case "${{ github.event.inputs.target_arch }}" in
+            amd64)
+              cmake .. -DCMAKE_BUILD_TYPE=Release
+              ;;
+            arm64)
+              cmake .. -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
+                -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++
+              ;;
+            armhf)
+              cmake .. -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_C_COMPILER=arm-linux-gnueabihf-gcc \
+                -DCMAKE_CXX_COMPILER=arm-linux-gnueabihf-g++
+              ;;
+            mipsel)
+              cmake .. -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_C_COMPILER=mipsel-linux-gnu-gcc \
+                -DCMAKE_CXX_COMPILER=mipsel-linux-gnu-g++
+              ;;
+            mips)
+              cmake .. -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_C_COMPILER=mips-linux-gnu-gcc \
+                -DCMAKE_CXX_COMPILER=mips-linux-gnu-g++
+              ;;
+          esac
 
-    - name: Clone Zerotier
-      run: |
-        git clone --depth=1 $REPO_URL $BUILD_DIR
+          make -j$(nproc)
+          cd ..
+          tar czf ../zerotier-${{ github.event.inputs.zerotier_version }}-${{ github.event.inputs.target_arch }}.tar.gz build/zerotier*
 
-    - name: Build Zerotier
-      run: |
-        cd $BUILD_DIR
-        make clean
-
-        case "${{ matrix.arch }}" in
-          mipsel)
-            echo "Building for mipsel using musl cross toolchain..."
-            # 确保 PATH 正确
-            export PATH="$TOOLCHAIN_DIR/mipsel-linux-muslsf-cross/mipsel-linux-muslsf/bin:$PATH"
-            make CC=mipsel-linux-musl-gcc CXX=mipsel-linux-musl-g++ ARCH=mipsel
-            ;;
-          *)
-            echo "Building for native architecture: ${{ matrix.arch }}"
-            make
-            ;;
-        esac
-
-        mkdir -p $OUT_DIR/${{ matrix.arch }}
-        if [ -f zerotier-one ]; then
-          cp zerotier-one $OUT_DIR/${{ matrix.arch }}/zerotier-one-${{ matrix.arch }}
-        fi
-        if [ -f zerotier-cli ]; then
-          cp zerotier-cli $OUT_DIR/${{ matrix.arch }}/zerotier-cli-${{ matrix.arch }}
-        fi
-
-    - name: Upload Artifact per architecture
-      uses: actions/upload-artifact@v4
-      with:
-        name: zerotier-${{ matrix.arch }}
-        path: ${{ env.OUT_DIR }}/${{ matrix.arch }}/*
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: zerotier-${{ github.event.inputs.target_arch }}
+          path: zerotier-${{ github.event.inputs.zerotier_version }}-${{ github.event.inputs.target_arch }}.tar.gz
 
   release:
     needs: build
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     steps:
-    - name: Download all build artifacts
-      uses: actions/download-artifact@v4
-      with:
-        name: zerotier-mipsel
-        path: ${{ env.OUT_DIR }}/mipsel
-    - uses: actions/download-artifact@v4
-      with:
-        name: zerotier-mips
-        path: ${{ env.OUT_DIR }}/mips
-    - uses: actions/download-artifact@v4
-      with:
-        name: zerotier-arm
-        path: ${{ env.OUT_DIR }}/arm
-    - uses: actions/download-artifact@v4
-      with:
-        name: zerotier-aarch64
-        path: ${{ env.OUT_DIR }}/aarch64
-    - uses: actions/download-artifact@v4
-      with:
-        name: zerotier-x86_64
-        path: ${{ env.OUT_DIR }}/x86_64
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: zerotier-${{ github.event.inputs.target_arch }}
+          path: ./release
 
-    - name: Create GitHub Release with all architectures
-      uses: softprops/action-gh-release@v2
-      with:
-        files: |
-          ${{ env.OUT_DIR }}/mipsel/*
-          ${{ env.OUT_DIR }}/mips/*
-          ${{ env.OUT_DIR }}/arm/*
-          ${{ env.OUT_DIR }}/aarch64/*
-          ${{ env.OUT_DIR }}/x86_64/*
-        tag_name: zerotier-all-${{ github.run_number }}
-        name: Zerotier All Architectures Build
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.zerotier_version }}
+          files: ./release/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
