@@ -73,7 +73,7 @@ jobs:
 
       - name: Build ncurses (Static)
         run: |
-          curl -L -o ncurses.tar.gz https://ftp.gnu.org/pub/gnu/ncurses/ncurses-6.4.tar.gz
+          curl -L -o ncurses.tar.gz https://invisible-island.net/archives/ncurses/ncurses-6.4.tar.gz
           tar -xzf ncurses.tar.gz
           cd ncurses-6.4
           ./configure \
