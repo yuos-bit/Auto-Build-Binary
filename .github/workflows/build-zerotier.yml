@@ -54,10 +54,17 @@ jobs:
             crossbuild-essential-arm64 \
             crossbuild-essential-armhf \
             crossbuild-essential-mipsel \
-            nlohmann-json3-dev \
-            libprometheus-cpp-dev
+            nlohmann-json3-dev
 
-      - name: Download Source
+      - name: Build prometheus-cpp from source
+        run: |
+          git clone --branch v1.4.0 https://github.com/jupp0r/prometheus-cpp.git
+          cd prometheus-cpp
+          mkdir build && cd build
+          cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -G Ninja
+          ninja install
+
+      - name: Download Zerotier Source
         run: |
           curl -L -o zerotier-${{ github.event.inputs.VERSION }}.tar.gz \
             https://github.com/zerotier/ZeroTierOne/archive/refs/tags/${{ github.event.inputs.VERSION }}.tar.gz
@@ -98,7 +105,7 @@ jobs:
             -DCMAKE_EXE_LINKER_FLAGS="$EXTRA_LDFLAGS" \
             -G Ninja
 
-      - name: Build
+      - name: Build Zerotier
         run: |
           cd build
           ninja -v
