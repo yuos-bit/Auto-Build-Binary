@@ -19,16 +19,26 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Set up build environment
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential cmake git wget curl unzip \
-            pkg-config autoconf automake libtool \
-            nlohmann-json3-dev libcurl4-openssl-dev libssl-dev
-          sudo apt-get install -y gcc-mipsel-linux-gnu g++-mipsel-linux-gnu \
-            gcc-mips-linux-gnu g++-mips-linux-gnu \
-            gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
-            gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf
+        - name: Set up build environment
+          run: |
+            sudo apt-get update
+            sudo apt-get install -y build-essential cmake git wget curl unzip \
+              pkg-config autoconf automake libtool \
+              nlohmann-json3-dev libcurl4-openssl-dev libssl-dev zlib1g-dev \
+              gcc-mipsel-linux-gnu g++-mipsel-linux-gnu \
+              gcc-mips-linux-gnu g++-mips-linux-gnu \
+              gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
+              gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf
+        
+            # 构建 prometheus-cpp（ZeroTier >= 1.14 需要）
+            git clone --branch v1.1.0 https://github.com/jupp0r/prometheus-cpp.git
+            cd prometheus-cpp
+            git submodule update --init --recursive
+            mkdir _build && cd _build
+            cmake .. -DBUILD_SHARED_LIBS=ON -DENABLE_PUSH=OFF -DENABLE_COMPRESSION=OFF
+            make -j$(nproc)
+            sudo make install
+      
 
       - name: Download ZeroTier source
         run: |
