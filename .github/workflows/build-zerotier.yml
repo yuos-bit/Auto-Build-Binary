@@ -60,41 +60,47 @@ jobs:
           export CXXFLAGS="-I/usr/local/include"
           export LDFLAGS="-L/usr/local/lib"
 
+          # 指定 prometheus-cpp 路径
+          PROMETHEUS_DIR=/usr/local/lib/cmake/PrometheusCpp
+
           case "${{ github.event.inputs.target_arch }}" in
             amd64)
-              cmake .. -DCMAKE_BUILD_TYPE=Release
+              cmake .. -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_C_COMPILER=clang \
+                -DCMAKE_CXX_COMPILER=clang++ \
+                -DPrometheusCpp_DIR=$PROMETHEUS_DIR
               ;;
             arm64)
               cmake .. -DCMAKE_BUILD_TYPE=Release \
                 -DCMAKE_C_COMPILER=clang \
                 -DCMAKE_CXX_COMPILER=clang++ \
-                -DCMAKE_SYSTEM_NAME=Linux \
-                -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
-                -DCMAKE_FIND_ROOT_PATH=/usr/aarch64-linux-gnu
+                -DCMAKE_SYSROOT=/usr/aarch64-linux-gnu \
+                -DCMAKE_FIND_ROOT_PATH=/usr/aarch64-linux-gnu \
+                -DPrometheusCpp_DIR=$PROMETHEUS_DIR
               ;;
             armhf)
               cmake .. -DCMAKE_BUILD_TYPE=Release \
                 -DCMAKE_C_COMPILER=clang \
                 -DCMAKE_CXX_COMPILER=clang++ \
-                -DCMAKE_SYSTEM_NAME=Linux \
-                -DCMAKE_SYSTEM_PROCESSOR=arm \
-                -DCMAKE_FIND_ROOT_PATH=/usr/arm-linux-gnueabihf
+                -DCMAKE_SYSROOT=/usr/arm-linux-gnueabihf \
+                -DCMAKE_FIND_ROOT_PATH=/usr/arm-linux-gnueabihf \
+                -DPrometheusCpp_DIR=$PROMETHEUS_DIR
               ;;
             mipsel)
               cmake .. -DCMAKE_BUILD_TYPE=Release \
                 -DCMAKE_C_COMPILER=clang \
                 -DCMAKE_CXX_COMPILER=clang++ \
-                -DCMAKE_SYSTEM_NAME=Linux \
-                -DCMAKE_SYSTEM_PROCESSOR=mipsel \
-                -DCMAKE_FIND_ROOT_PATH=/usr/mipsel-linux-gnu
+                -DCMAKE_SYSROOT=/usr/mipsel-linux-gnu \
+                -DCMAKE_FIND_ROOT_PATH=/usr/mipsel-linux-gnu \
+                -DPrometheusCpp_DIR=$PROMETHEUS_DIR
               ;;
             mips)
               cmake .. -DCMAKE_BUILD_TYPE=Release \
                 -DCMAKE_C_COMPILER=clang \
                 -DCMAKE_CXX_COMPILER=clang++ \
-                -DCMAKE_SYSTEM_NAME=Linux \
-                -DCMAKE_SYSTEM_PROCESSOR=mips \
-                -DCMAKE_FIND_ROOT_PATH=/usr/mips-linux-gnu
+                -DCMAKE_SYSROOT=/usr/mips-linux-gnu \
+                -DCMAKE_FIND_ROOT_PATH=/usr/mips-linux-gnu \
+                -DPrometheusCpp_DIR=$PROMETHEUS_DIR
               ;;
             *)
               echo "Unsupported architecture"
