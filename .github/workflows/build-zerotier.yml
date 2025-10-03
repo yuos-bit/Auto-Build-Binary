@@ -77,9 +77,9 @@ jobs:
           body: "ZeroTierOne ${{ github.event.inputs.ZT_VERSION }} binary for ${{ github.event.inputs.ARCH }}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Upload artifact (optional)
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: zerotier-one-${{ github.event.inputs.ZT_VERSION }}-${{ github.event.inputs.ARCH }}
           path: zerotier-one-${{ github.event.inputs.ZT_VERSION }}-${{ github.event.inputs.ARCH }}.tar.gz
+        
