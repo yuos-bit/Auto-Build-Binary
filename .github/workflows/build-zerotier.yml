@@ -1,10 +1,20 @@
-name: Build ZeroTierOne
+name: Build Zerotier Binary
 
 on:
   workflow_dispatch:
     inputs:
-      ZT_VERSION:
-        description: '选择 ZeroTier 版本'
+      ARCH:
+        description: 'Target Architecture'
+        required: true
+        default: 'x86_64'
+        type: choice
+        options:
+          - 'x86_64'
+          - 'aarch64'
+          - 'mipsel'
+          - 'armv7'
+      VERSION:
+        description: 'Zerotier Version'
         required: true
         default: '1.16.0'
         type: choice
@@ -19,77 +29,83 @@ on:
           - '1.10.6'
           - '1.10.5'
           - '1.10.4'
-      ARCH:
-        description: '选择目标架构'
-        required: true
-        default: 'mipsel'
-        type: choice
-        options:
-          - 'mipsel'
-          - 'arm'
-          - 'x86_64'
 
 jobs:
   build:
-    name: Build ZeroTierOne Binary
     runs-on: ubuntu-22.04
-
     steps:
-      - name: Checkout repo
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install cross toolchain
+      - name: Install dependencies
         run: |
           sudo apt-get update
-          if [ "${{ github.event.inputs.ARCH }}" = "mipsel" ]; then
-            sudo apt-get install -y gcc-mipsel-linux-gnu g++-mipsel-linux-gnu
-            echo "TOOLCHAIN_PREFIX=mipsel-linux-gnu" >> $GITHUB_ENV
-          elif [ "${{ github.event.inputs.ARCH }}" = "arm" ]; then
-            sudo apt-get install -y gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf
-            echo "TOOLCHAIN_PREFIX=arm-linux-gnueabihf" >> $GITHUB_ENV
-          elif [ "${{ github.event.inputs.ARCH }}" = "x86_64" ]; then
-            sudo apt-get install -y gcc-x86-64-linux-gnu g++-x86-64-linux-gnu
-            echo "TOOLCHAIN_PREFIX=x86_64-linux-gnu" >> $GITHUB_ENV
-          else
-            echo "Unsupported ARCH"
-            exit 1
-          fi
+          sudo apt-get install -y \
+            build-essential \
+            gcc g++ \
+            clang \
+            cmake \
+            ninja-build \
+            git \
+            curl wget unzip \
+            pkg-config \
+            autoconf automake libtool \
+            qemu-user-static \
+            crossbuild-essential-arm64 \
+            crossbuild-essential-armhf \
+            crossbuild-essential-mipsel
 
-      - name: Download ZeroTier source
+      - name: Download Source
         run: |
-          curl -LO https://github.com/zerotier/ZeroTierOne/archive/refs/tags/${{ github.event.inputs.ZT_VERSION }}.tar.gz
-          tar -xzf ${{ github.event.inputs.ZT_VERSION }}.tar.gz
+          curl -L -o zerotier-${{ github.event.inputs.VERSION }}.tar.gz \
+            https://github.com/zerotier/ZeroTierOne/archive/refs/tags/${{ github.event.inputs.VERSION }}.tar.gz
+          tar -xzf zerotier-${{ github.event.inputs.VERSION }}.tar.gz
+          mv ZeroTierOne-${{ github.event.inputs.VERSION }} zerotier
 
-      - name: Build ZeroTier
+      - name: Configure Compiler
         run: |
-          DIR=$PWD/ZeroTierOne-${{ github.event.inputs.ZT_VERSION }}
-          cd $DIR
-          export CC=${TOOLCHAIN_PREFIX}-gcc
-          export CXX=${TOOLCHAIN_PREFIX}-g++
-          export AR=${TOOLCHAIN_PREFIX}-ar
-          export RANLIB=${TOOLCHAIN_PREFIX}-ranlib
-          export CFLAGS="-O2 -fno-strict-aliasing"
-          export CXXFLAGS="-O2 -fno-strict-aliasing -std=c++17"
+          case "${{ github.event.inputs.ARCH }}" in
+            x86_64)
+              export CC=gcc
+              export CXX=g++
+              ;;
+            aarch64)
+              export CC=aarch64-linux-gnu-gcc
+              export CXX=aarch64-linux-gnu-g++
+              ;;
+            armv7)
+              export CC=arm-linux-gnueabihf-gcc
+              export CXX=arm-linux-gnueabihf-g++
+              ;;
+            mipsel)
+              export CC=mipsel-linux-gnu-gcc
+              export CXX=mipsel-linux-gnu-g++
+              ;;
+          esac
 
-          make OSTYPE=Linux
+          echo "Using compiler: $CC, $CXX"
+          mkdir -p build
+          cd build
+          cmake ../zerotier \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=$CC \
+            -DCMAKE_CXX_COMPILER=$CXX \
+            -DCMAKE_CXX_STANDARD=17 \
+            -G Ninja
 
-      - name: Package binary
+      - name: Build
         run: |
-          mkdir -p release
-          cp $PWD/ZeroTierOne-${{ github.event.inputs.ZT_VERSION }}/zerotier-one release/
-          tar -czf zerotier-one-${{ github.event.inputs.ZT_VERSION }}-${{ github.event.inputs.ARCH }}.tar.gz -C release zerotier-one
+          cd build
+          ninja -v
 
-      - name: Upload Release
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: v${{ github.event.inputs.ZT_VERSION }}
-          name: ZeroTierOne-${{ github.event.inputs.ZT_VERSION }}-${{ github.event.inputs.ARCH }}
-          body: "ZeroTierOne ${{ github.event.inputs.ZT_VERSION }} binary for ${{ github.event.inputs.ARCH }}"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload artifact (optional)
+      - name: Package Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: zerotier-one-${{ github.event.inputs.ZT_VERSION }}-${{ github.event.inputs.ARCH }}
-          path: zerotier-one-${{ github.event.inputs.ZT_VERSION }}-${{ github.event.inputs.ARCH }}.tar.gz
+          name: zerotier-${{ github.event.inputs.VERSION }}-${{ github.event.inputs.ARCH }}
+          path: build/zerotier*
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: build/zerotier*
