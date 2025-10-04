@@ -36,7 +36,7 @@ jobs:
             pkg-config autoconf automake libtool \
             qemu-user-static \
             crossbuild-essential-arm64 crossbuild-essential-armhf crossbuild-essential-mipsel \
-            zlib1g-dev libcurl4-openssl-dev nlohmann-json3-dev \
+            zlib1g-dev nlohmann-json3-dev \
             libncurses5-dev libncursesw5-dev
 
       - name: Set Compiler
@@ -45,23 +45,28 @@ jobs:
             x86_64)
               export CC=gcc
               export CXX=g++
+              TARGET_HOST=x86_64-linux-gnu
               ;;
             aarch64)
               export CC=aarch64-linux-gnu-gcc
               export CXX=aarch64-linux-gnu-g++
+              TARGET_HOST=aarch64-linux-gnu
               ;;
             armv7)
               export CC=arm-linux-gnueabihf-gcc
               export CXX=arm-linux-gnueabihf-g++
+              TARGET_HOST=arm-linux-gnueabihf
               ;;
             mipsel)
               export CC=mipsel-linux-gnu-gcc
               export CXX=mipsel-linux-gnu-g++
+              TARGET_HOST=mipsel-linux-gnu
               ;;
           esac
           echo "Using compiler: $CC, $CXX"
           echo "CC=$CC" >> $GITHUB_ENV
           echo "CXX=$CXX" >> $GITHUB_ENV
+          echo "TARGET_HOST=$TARGET_HOST" >> $GITHUB_ENV
           mkdir -p $INSTALL_DIR
 
       - name: Build zlib (Static)
@@ -78,7 +83,7 @@ jobs:
           tar -xzf ncurses.tar.gz
           cd ncurses-6.4
           CC=$CC CXX=$CXX ./configure \
-            --host=${{ github.event.inputs.ARCH }}-linux-gnu \
+            --host=$TARGET_HOST \
             --prefix=$INSTALL_DIR \
             --with-shared=no \
             --with-static=yes \
@@ -87,6 +92,23 @@ jobs:
             --without-manpages \
             --without-progs \
             --disable-stripping
+          make -j$(nproc) install
+
+      - name: Build libcurl (Static)
+        run: |
+          curl -L -o curl.tar.gz https://curl.se/download/curl-8.9.1.tar.gz
+          tar -xzf curl.tar.gz
+          cd curl-8.9.1
+          CC=$CC CXX=$CXX ./configure \
+            --host=$TARGET_HOST \
+            --prefix=$INSTALL_DIR \
+            --disable-shared \
+            --enable-static \
+            --with-zlib=$INSTALL_DIR \
+            --without-ssl \
+            --without-gnutls \
+            --without-libidn2 \
+            --without-librtmp
           make -j$(nproc) install
 
       - name: Build Prometheus-cpp (Static)
