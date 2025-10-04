@@ -20,7 +20,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-20.04
     env:
       INSTALL_DIR: ${{ github.workspace }}/sysroot
 
@@ -38,6 +38,17 @@ jobs:
             crossbuild-essential-arm64 crossbuild-essential-armhf crossbuild-essential-mipsel \
             zlib1g-dev libcurl4-openssl-dev \
             libncurses5-dev libncursesw5-dev
+
+      - name: Install Clang
+        run: |
+          wget https://github.com/terralang/llvm-build/releases/download/llvm-18.1.8/clang+llvm-18.1.8-x86_64-linux-gnu.tar.xz
+          sudo tar -xf clang+llvm-18.1.8-x86_64-linux-gnu.tar.xz -C /opt/
+          echo 'export PATH=/opt/clang+llvm-18.1.8-x86_64-linux-gnu/bin:$PATH' >> $GITHUB_ENV
+
+      - name: Install Rust
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+          echo "source $HOME/.cargo/env" >> $GITHUB_ENV
 
       - name: Set Compiler
         run: |
@@ -63,7 +74,6 @@ jobs:
               TARGET_HOST=mipsel-linux-gnu
               ;;
           esac
-          echo "Using compiler: $CC, $CXX"
           echo "CC=$CC" >> $GITHUB_ENV
           echo "CXX=$CXX" >> $GITHUB_ENV
           echo "TARGET_HOST=$TARGET_HOST" >> $GITHUB_ENV
@@ -119,63 +129,24 @@ jobs:
             --without-zstd
           make -j$(nproc) install
 
-      - name: Build Prometheus-cpp (Static)
-        run: |
-          curl -L -o prometheus-cpp.tar.gz https://github.com/jupp0r/prometheus-cpp/releases/download/v1.3.0/prometheus-cpp-with-submodules.tar.gz
-          tar -xzf prometheus-cpp.tar.gz
-          cd prometheus-cpp-with-submodules
-          mkdir build && cd build
-          cmake .. \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DBUILD_SHARED_LIBS=OFF \
-            -DCMAKE_C_COMPILER=$CC \
-            -DCMAKE_CXX_COMPILER=$CXX \
-            -DCMAKE_INSTALL_PREFIX=$INSTALL_DIR \
-            -DCMAKE_SYSROOT=$INSTALL_DIR \
-            -DCMAKE_FIND_ROOT_PATH=$INSTALL_DIR \
-            -DZLIB_LIBRARY=$INSTALL_DIR/lib/libz.a \
-            -DZLIB_INCLUDE_DIR=$INSTALL_DIR/include \
-            -DCURL_INCLUDE_DIR=$INSTALL_DIR/include \
-            -DCURL_LIBRARY=$INSTALL_DIR/lib/libcurl.a \
-            -DENABLE_TESTING=OFF \
-            -DENABLE_PUSH_PULL_TESTING=OFF \
-            -DENABLE_SAMPLE=OFF \
-            -G Ninja
-          ninja install
-
       - name: Build Zerotier
         run: |
           curl -L -o zerotier-${{ github.event.inputs.VERSION }}.tar.gz \
             https://github.com/zerotier/ZeroTierOne/archive/refs/tags/${{ github.event.inputs.VERSION }}.tar.gz
           tar -xzf zerotier-${{ github.event.inputs.VERSION }}.tar.gz
           mv ZeroTierOne-${{ github.event.inputs.VERSION }} zerotier
-          mkdir -p zerotier/build && cd zerotier/build
-          cmake .. \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_C_COMPILER=$CC \
-            -DCMAKE_CXX_COMPILER=$CXX \
-            -DCMAKE_CXX_STANDARD=17 \
-            -DCMAKE_PREFIX_PATH=$INSTALL_DIR \
-            -DCMAKE_SYSROOT=$INSTALL_DIR \
-            -DCMAKE_FIND_ROOT_PATH=$INSTALL_DIR \
-            -DCMAKE_INCLUDE_PATH="$INSTALL_DIR/include" \
-            -DCMAKE_LIBRARY_PATH="$INSTALL_DIR/lib" \
-            -DCURL_INCLUDE_DIR=$INSTALL_DIR/include \
-            -DCURL_LIBRARY=$INSTALL_DIR/lib/libcurl.a \
-            -DPrometheus_CPP_DIR=$INSTALL_DIR \
-            -DCMAKE_EXE_LINKER_FLAGS="-static -L$INSTALL_DIR/lib -lncursesw -lcurl -lz -lpthread -ldl" \
-            -G Ninja
-          ninja -v
+          cd zerotier
+          make -f make-linux.mk
 
       - name: Package Artifact
         uses: actions/upload-artifact@v4
         with:
           name: zerotier-${{ github.event.inputs.VERSION }}-${{ github.event.inputs.ARCH }}
-          path: zerotier/build/zerotier*
+          path: zerotier/ZeroTierOne
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ github.event.inputs.VERSION }}-${{ github.event.inputs.ARCH }}
           name: Zerotier ${{ github.event.inputs.VERSION }} (${{ github.event.inputs.ARCH }})
-          files: zerotier/build/zerotier*
+          files: zerotier/ZeroTierOne
