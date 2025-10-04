@@ -36,7 +36,7 @@ jobs:
             pkg-config autoconf automake libtool \
             qemu-user-static \
             crossbuild-essential-arm64 crossbuild-essential-armhf crossbuild-essential-mipsel \
-            zlib1g-dev libcurl4-openssl-dev nlohmann-json3-dev \
+            zlib1g-dev libcurl4-openssl-dev \
             libncurses5-dev libncursesw5-dev
 
       - name: Set Compiler
@@ -68,6 +68,12 @@ jobs:
           echo "CXX=$CXX" >> $GITHUB_ENV
           echo "TARGET_HOST=$TARGET_HOST" >> $GITHUB_ENV
           mkdir -p $INSTALL_DIR
+
+      - name: Install nlohmann-json (Header Only)
+        run: |
+          mkdir -p $INSTALL_DIR/include/nlohmann
+          curl -L -o json.hpp https://github.com/nlohmann/json/releases/download/v3.11.2/json.hpp
+          mv json.hpp $INSTALL_DIR/include/nlohmann/
 
       - name: Build zlib (Static)
         run: |
