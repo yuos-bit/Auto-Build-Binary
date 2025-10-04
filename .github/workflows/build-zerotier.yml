@@ -36,7 +36,7 @@ jobs:
             pkg-config autoconf automake libtool \
             qemu-user-static \
             crossbuild-essential-arm64 crossbuild-essential-armhf crossbuild-essential-mipsel \
-            zlib1g-dev nlohmann-json3-dev \
+            zlib1g-dev libcurl4-openssl-dev nlohmann-json3-dev \
             libncurses5-dev libncursesw5-dev
 
       - name: Set Compiler
@@ -108,7 +108,9 @@ jobs:
             --without-ssl \
             --without-gnutls \
             --without-libidn2 \
-            --without-librtmp
+            --without-librtmp \
+            --without-brotli \
+            --without-zstd
           make -j$(nproc) install
 
       - name: Build Prometheus-cpp (Static)
