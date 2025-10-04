@@ -152,9 +152,12 @@ jobs:
             -DCMAKE_PREFIX_PATH=$INSTALL_DIR \
             -DCMAKE_SYSROOT=$INSTALL_DIR \
             -DCMAKE_FIND_ROOT_PATH=$INSTALL_DIR \
+            -DCMAKE_INCLUDE_PATH="$INSTALL_DIR/include" \
+            -DCMAKE_LIBRARY_PATH="$INSTALL_DIR/lib" \
             -DCURL_INCLUDE_DIR=$INSTALL_DIR/include \
             -DCURL_LIBRARY=$INSTALL_DIR/lib/libcurl.a \
-            -DCMAKE_EXE_LINKER_FLAGS="-static -L$INSTALL_DIR/lib -lncursesw -lcurl -lz -ldl -lpthread" \
+            -DPrometheus_CPP_DIR=$INSTALL_DIR \
+            -DCMAKE_EXE_LINKER_FLAGS="-static -L$INSTALL_DIR/lib -lncursesw -lcurl -lz -lpthread -ldl" \
             -G Ninja
           ninja -v
 
