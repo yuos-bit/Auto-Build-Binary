@@ -60,7 +60,8 @@ jobs:
               ;;
           esac
           echo "Using compiler: $CC, $CXX"
-          export PATH=$PATH
+          echo "CC=$CC" >> $GITHUB_ENV
+          echo "CXX=$CXX" >> $GITHUB_ENV
           mkdir -p $INSTALL_DIR
 
       - name: Build zlib (Static)
@@ -76,7 +77,7 @@ jobs:
           curl -L -o ncurses.tar.gz https://invisible-island.net/archives/ncurses/ncurses-6.4.tar.gz
           tar -xzf ncurses.tar.gz
           cd ncurses-6.4
-          ./configure \
+          CC=$CC CXX=$CXX ./configure \
             --host=${{ github.event.inputs.ARCH }}-linux-gnu \
             --prefix=$INSTALL_DIR \
             --with-shared=no \
@@ -84,7 +85,8 @@ jobs:
             --without-debug \
             --without-ada \
             --without-manpages \
-            CC=$CC CXX=$CXX
+            --without-progs \
+            --disable-stripping
           make -j$(nproc) install
 
       - name: Build Prometheus-cpp (Static)
@@ -134,6 +136,7 @@ jobs:
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/')
         with:
+          tag_name: v${{ github.event.inputs.VERSION }}-${{ github.event.inputs.ARCH }}
+          name: Zerotier ${{ github.event.inputs.VERSION }} (${{ github.event.inputs.ARCH }})
           files: zerotier/build/zerotier*
